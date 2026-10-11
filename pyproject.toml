@@ -1,0 +1,32 @@
+[project]
+name = "w5500-litex-verilog-driver"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Mike Kuskov", email = "m.kuskov@innopolis.university" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "migen",
+    "litex",
+    "litex-boards",
+    "litespi",
+    "pythondata-software-picolibc",
+    "pythondata-software-compiler_rt",
+]
+
+[tool.uv.sources]
+migen                           = { git = "https://git.m-labs.hk/M-Labs/migen/"                                               }
+litex                           = { git = "https://github.com/enjoy-digital/litex/",                          tag = "2026.04" }
+litespi                         = { git = "https://github.com/litex-hub/litespi/",                            tag = "2026.04" }
+litex-boards                    = { git = "https://github.com/litex-hub/litex-boards/",                       tag = "2026.04" }
+pythondata-software-picolibc    = { git = "https://github.com/litex-hub/pythondata-software-picolibc/",       tag = "2026.04" }
+pythondata-software-compiler_rt = { git = "https://github.com/litex-hub/pythondata-software-compiler_rt/",    tag = "2026.04" }
+
+[project.scripts]
+w5500-litex-verilog-driver = "w5500_litex_verilog_driver:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
