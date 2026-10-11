@@ -1,7 +1,7 @@
 [project]
 name = "w5500-litex-verilog-driver"
 version = "0.1.0"
-description = "Add your description here"
+description = "Standalone W5500 UDP IP core (SPI master + valid/ready streams) generated as a single Verilog file with LiteX/Migen"
 readme = "README.md"
 authors = [
     { name = "Mike Kuskov", email = "m.kuskov@innopolis.university" }
@@ -25,8 +25,29 @@ pythondata-software-picolibc    = { git = "https://github.com/litex-hub/pythonda
 pythondata-software-compiler_rt = { git = "https://github.com/litex-hub/pythondata-software-compiler_rt/",    tag = "2026.04" }
 
 [project.scripts]
-w5500-litex-verilog-driver = "w5500_litex_verilog_driver:main"
+w5500-gen = "w5500_litex_verilog_driver.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "cocotb>=2.1.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["include", "build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# Aligned keyword arguments / assignments are the LiteX/Migen house style.
+ignore = ["E221", "E241", "E251", "E272", "RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

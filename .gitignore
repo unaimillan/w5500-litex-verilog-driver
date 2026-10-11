@@ -221,3 +221,13 @@ __marimo__/
 
 # Personal devcontainer setup
 .devcontainer/
+
+# Reference repositories (local inspiration only, never part of this project)
+include/
+
+# HDL build / simulation outputs (build/ and dist/ are covered above)
+sim_build/
+results.xml
+*.vcd
+*.fst
+*.fst.hier
