@@ -24,15 +24,18 @@ uv sync                          # LiteX stack + dev tools (pytest, cocotb, ruff
 ## Usage
 
 ```sh
-make build                                   # -> dist/w5500_udp.v
-make build PRESET=default32 IMPL=soc_v1      # pick a config preset / implementation
+make                                         # help: targets, variables, implementations, presets
+make build                                   # no IMPL -> usage + available options
+make build IMPL=stub_migen                   # -> dist/w5500_udp.v
+make build IMPL=soc_v1 PRESET=default32      # pick an implementation / config preset
 make test                                    # pytest: config, generation, lint, model, cocotb
-make lint                                    # Verilator + Yosys checks of the generated file
-make -j synth-estimate                       # Yosys resource estimate (MAX10/Gowin/Xilinx/Lattice)
-make help
+make lint IMPL=stub_rtl                      # Verilator + Yosys checks of the generated file
+make -j synth-estimate IMPL=stub_rtl         # Yosys resource estimate (MAX10/Gowin/Xilinx/Lattice)
 ```
 
-or directly: `uv run w5500-gen --preset default --impl stub_migen --output-dir build/gateware`.
+There is no default implementation: `generate`, `build`, `lint` and `synth-*` need `IMPL=`.
+Or directly: `uv run w5500-gen --preset default --impl stub_migen --output-dir build/gateware`
+(`--list` shows implementations and presets).
 
 ### Configuration
 

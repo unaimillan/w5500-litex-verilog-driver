@@ -1,19 +1,21 @@
 # W5500 UDP IP core - build / test / lint / resource estimate.
 #
-#   make generate          -> build/gateware/$(BUILD_NAME).v (single self-contained Verilog file)
+#   make                   -> help (targets, variables, implementations, presets)
+#   make generate IMPL=..  -> build/gateware/$(BUILD_NAME).v (single self-contained Verilog file)
 #   make build             -> generate + copy to dist/
 #   make test              -> pytest: config, generation, lint, W5500 model, cocotb (Verilator)
 #   make lint              -> Verilator lint of the generated file + hand-written rtl/
 #   make -j synth-estimate -> Yosys LUT/FF/BRAM estimate for MAX10, Gowin, Xilinx, Lattice
 #   make check             -> ruff (Python lint)
 #
-# Override on the command line, e.g.:  make build PRESET=de10lite IMPL=stub_rtl BUILD_NAME=eth0
+# generate/build/lint/synth-* need IMPL (there is no default), e.g.:
+#   make build IMPL=stub_rtl PRESET=de10lite BUILD_NAME=eth0
 
 # ---- Configuration ----------------------------------------------------------
 
 UV         ?= uv
 PRESET     ?= default
-IMPL       ?= stub_migen
+IMPL       ?=
 BUILD_NAME ?= w5500_udp
 OUT_DIR    ?= build/gateware
 DIST_DIR   ?= dist
@@ -39,15 +41,36 @@ VERI_WAIVE := -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-WIDTHTRU
 PARAMS     := $(OUT_DIR)/.params-$(BUILD_NAME)
 PARAMS_VAL := $(PRESET) $(IMPL) $(BUILD_NAME)
 
+LIST_OPTIONS := $(UV) run --quiet w5500-gen --list
+
+# Targets that need the generated file refuse to run without IMPL: print usage + options.
+ifeq ($(IMPL),)
+ifneq ($(filter generate build lint synth-%,$(MAKECMDGOALS)),)
+$(info usage: make $(firstword $(filter generate build lint synth-%,$(MAKECMDGOALS))) IMPL=<impl> [PRESET=$(PRESET)] [BUILD_NAME=$(BUILD_NAME)])
+$(info )
+$(shell $(LIST_OPTIONS) >&2)
+$(error IMPL is not set (e.g. make build IMPL=stub_migen PRESET=default))
+endif
+endif
+
 # ---- Targets ----------------------------------------------------------------
 
-.PHONY: all help generate build test lint lint-rtl synth-estimate check clean FORCE
-
-all: build test
+.DEFAULT_GOAL := help
+.PHONY: help generate build test lint lint-rtl synth-estimate check clean FORCE
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
+	@echo "usage: make <target> [IMPL=<impl>] [PRESET=$(PRESET)] [BUILD_NAME=$(BUILD_NAME)]"
+	@echo
+	@echo "targets:"
+	@grep -E '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@echo
+	@echo "variables:"
+	@echo "  IMPL             implementation, required by generate/build/lint/synth-*"
+	@echo "  PRESET           CoreConfig preset (default: $(PRESET))"
+	@echo "  BUILD_NAME       top module / file name (default: $(BUILD_NAME))"
+	@echo
+	@$(LIST_OPTIONS)
 
 generate: $(GATEWARE) ## Generate the single-file Verilog core into build/
 
@@ -81,7 +104,7 @@ stat_cells = grep -q 'cells$$' $(1) && sed -n '/cells$$/,/^$$/p' $(1) || echo " 
 synth-estimate: $(SYNTH_TARGETS:%=$(SYNTH_DIR)/%.stat) ## Yosys resource estimate (use -j)
 	@for f in $^; do echo "== $$(basename $$f .stat)"; $(call stat_cells,$$f); done
 
-synth-%: $(SYNTH_DIR)/%.stat
+synth-%: $(SYNTH_DIR)/%.stat ## Single-target estimate (synth-intel, synth-gowin, ...)
 	@echo "== $*"; $(call stat_cells,$<)
 
 $(SYNTH_DIR)/%.stat: $(GATEWARE)

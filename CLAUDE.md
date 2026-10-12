@@ -18,11 +18,12 @@ taken from it, credit the author + repo there (and next to the code that uses it
 
 ```sh
 uv sync
-make generate [PRESET=default] [IMPL=stub_migen] [BUILD_NAME=w5500_udp]
-make build                 # + copy to dist/
+make                       # help (targets, variables, `w5500-gen --list` options)
+make generate IMPL=<impl> [PRESET=default] [BUILD_NAME=w5500_udp]   # no default IMPL
+make build IMPL=<impl>     # + copy to dist/; without IMPL: usage + options
 make test                  # uv run pytest (~105 s; cocotb sims under build/test/)
-make lint                  # Verilator -Wall (+ waivers) on generated file, strict on rtl/, yosys check
-make -j synth-estimate     # yosys MAX10/Gowin/Xilinx/Lattice -> build/synth/*.stat
+make lint IMPL=<impl>      # Verilator -Wall (+ waivers) on generated file, strict on rtl/, yosys check
+make -j synth-estimate IMPL=<impl>  # yosys MAX10/Gowin/Xilinx/Lattice -> build/synth/*.stat
                            # (soc_v1: add -k, synth_intel can't map initialized M9K)
 make check                 # ruff
 uv run pytest tests/test_cocotb.py -k "default-stub_rtl"   # single sim
