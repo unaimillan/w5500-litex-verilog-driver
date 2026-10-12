@@ -264,3 +264,10 @@ Used here for ideas only.
   16-bit reads; RX overflow.
 - **Tests**: replay the Arduino-library sequence (verilog-mic-array captures) as a reference
   scenario in the `W5500Model`.
+
+## Third-party code used
+
+- **FemtoRV32 "quark"** (Bruno Levy, Matthias Koch), the CPU of `soc_v1`.
+  - Source: <https://github.com/BrunoLevy/learn-fpga>, file `FemtoRV/RTL/PROCESSOR/femtorv32_quark.v` at commit `5c08c870315c09ccd9ec64ccde20ab3375b3f273`.
+  - Vendored unmodified in `vendor/femtorv/`, used through LiteX's FemtoRV wrapper.
+

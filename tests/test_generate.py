@@ -13,7 +13,9 @@ from .conftest import IMPLS, ROOT, TOP, VERILATOR_WAIVERS
 
 RTL_SOURCES = sorted([*(ROOT / "rtl").glob("*.v"), *(ROOT / "rtl").glob("*.sv")])
 
-PORT_RE = re.compile(r"^\s*(input|output|inout)\s+wire\s+(?:\[(\d+):0\])?\s*(\w+)", re.M)
+PRESETS_UNDER_TEST = ["default", "default32"]  # Unsupported (preset, impl) pairs are skipped.
+
+PORT_RE = re.compile(r"^\s*(input|output|inout)\s+(?:wire|reg)\s+(?:\[(\d+):0\])?\s*(\w+)", re.M)
 
 
 def top_ports(path):
@@ -25,7 +27,7 @@ def top_ports(path):
 
 
 @pytest.mark.parametrize("impl", IMPLS)
-@pytest.mark.parametrize("preset", ["default", "default32"])
+@pytest.mark.parametrize("preset", PRESETS_UNDER_TEST)
 def test_port_contract(generated, preset, impl):
     expected = {name: ({"in": "input", "out": "output"}[d], w)
                 for name, d, w in ports(PRESETS[preset])}
@@ -33,8 +35,9 @@ def test_port_contract(generated, preset, impl):
 
 
 @pytest.mark.parametrize("impl", IMPLS)
-def test_self_contained(generated, impl):
-    src = generated("default", impl).read_text()
+@pytest.mark.parametrize("preset", PRESETS_UNDER_TEST)
+def test_self_contained(generated, preset, impl):
+    src = generated(preset, impl).read_text()
     assert "$readmem" not in src
     assert "`include" not in src
     assert src.startswith(f"// {TOP}: W5500 UDP IP core")
@@ -42,8 +45,9 @@ def test_self_contained(generated, impl):
 
 @pytest.mark.skipif(shutil.which("yosys") is None, reason="yosys not installed")
 @pytest.mark.parametrize("impl", IMPLS)
-def test_yosys_check(generated, impl):
-    path = generated("default", impl)
+@pytest.mark.parametrize("preset", PRESETS_UNDER_TEST)
+def test_yosys_check(generated, preset, impl):
+    path = generated(preset, impl)
     subprocess.run(["yosys", "-q", "-p",
                     f"read_verilog -sv {path}; hierarchy -check -top {TOP}; proc; check -assert"],
                    check=True)
@@ -51,8 +55,9 @@ def test_yosys_check(generated, impl):
 
 @pytest.mark.skipif(shutil.which("verilator") is None, reason="verilator not installed")
 @pytest.mark.parametrize("impl", IMPLS)
-def test_verilator_lint(generated, impl):
-    path = generated("default", impl)
+@pytest.mark.parametrize("preset", PRESETS_UNDER_TEST)
+def test_verilator_lint(generated, preset, impl):
+    path = generated(preset, impl)
     subprocess.run(["verilator", "--lint-only", "-Wall", *VERILATOR_WAIVERS,
                     "--top-module", TOP, str(path)], check=True)
 

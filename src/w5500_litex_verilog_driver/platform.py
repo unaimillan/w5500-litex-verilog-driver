@@ -3,16 +3,41 @@
 from __future__ import annotations
 
 import os
+import re
 
 from litex.build.generic_platform import GenericPlatform
 from migen.fhdl.structure import _Fragment
+
+_READMEMH = re.compile(r'^\s*\$readmemh\("([^"]+)", (\w+)\);\n', re.M)
+
+
+def inline_memory_init(source: str, data_files: dict[str, str]) -> str:
+    """Replace Migen's ``$readmemh("<file>", mem);`` by one ``mem[i] = 'h..;`` per word.
+
+    Keeps the output self-contained. Initial blocks with constant assignments are accepted for
+    RAM/ROM inference by Yosys, Vivado and Quartus (Quartus: verify on the real toolchain).
+    """
+    used = set()
+
+    def repl(m):
+        filename, mem = m.groups()
+        used.add(filename)
+        words = data_files[filename].split()
+        return "".join(f"\t{mem}[{i}] = 'h{w};\n" for i, w in enumerate(words))
+
+    source = _READMEMH.sub(repl, source)
+    if missing := sorted(set(data_files) - used):
+        raise RuntimeError(f"generated design needs data files {missing}: "
+                           "cannot inline them into the single-file output")
+    return source
 
 
 class VirtualPlatform(GenericPlatform):
     """No toolchain, no pin locations: ``build()`` only writes Verilog.
 
-    Migen logic is flattened into the top module; every hand-written file registered with
-    ``add_source()`` (rtl/) is appended after it, so the output has no external dependencies.
+    Migen logic is flattened into the top module (memory init inlined, no ``$readmemh``); every
+    Verilog file registered with ``add_source()`` (rtl/, vendor/) is appended after it, so the
+    output has no external dependencies.
     Hand-written sources may be SystemVerilog: read the output in SV mode (Verilator does by
     default; Yosys needs ``read_verilog -sv``).
     """
@@ -27,11 +52,9 @@ class VirtualPlatform(GenericPlatform):
         name = build_name or self.name
 
         conv = self.get_verilog(fragment, name=name, regular_comb=True, hierarchical=False)
-        if conv.data_files:
-            raise RuntimeError(f"generated design needs data files {sorted(conv.data_files)}: "
-                               "memory init files break the single-file output")
+        main = inline_memory_init(conv.main_source, conv.data_files)
 
-        parts = ["".join(f"// {line}\n" for line in header), conv.main_source]
+        parts = ["".join(f"// {line}\n" for line in header), main]
         for path, language, _library, *_ in self.sources:
             if language not in ("verilog", "systemverilog"):
                 raise ValueError(f"{path}: unsupported source language {language!r}")

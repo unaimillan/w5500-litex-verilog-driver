@@ -32,7 +32,8 @@ SOURCES  := $(shell find src -name '*.py') $(wildcard rtl/*.v rtl/*.sv) pyprojec
 RTL      := $(wildcard rtl/*.v rtl/*.sv)
 
 # Verilator -Wall waivers for the generated file (keep in sync with tests/conftest.py).
-VERI_WAIVE := -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC
+VERI_WAIVE := -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC \
+              -Wno-COMBDLY -Wno-PROCASSINIT -Wno-CASEINCOMPLETE
 
 # Regenerate when the parameters change, not only when sources change.
 PARAMS     := $(OUT_DIR)/.params-$(BUILD_NAME)

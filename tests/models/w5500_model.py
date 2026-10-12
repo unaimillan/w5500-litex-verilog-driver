@@ -6,8 +6,9 @@ Two layers:
                        Unit-testable without a simulator.
   * ``W5500SpiSlave`` - cocotb adapter driving/sampling the SPI pins (mode 0) of the DUT.
 
-Not modelled (yet): ARP/timeouts, interrupts pin (INTn), PHY link changes, fixed-length (FDM)
-frames, TCP/MACRAW, MR software reset side effects beyond register defaults.
+Not modelled (yet): ARP/timeouts (only an all-fail switch), interrupts pin (INTn), PHY link
+changes, fixed-length (FDM) frames, TCP/MACRAW, MR software reset side effects beyond register
+defaults.
 
 Assumed where the datasheet is silent (see "To clarify" in docs/w5500-notes.md): VDM bursts wrap
 inside a socket buffer, the 8-byte UDP RX header format, and MOSI content is ignored on reads.
@@ -43,9 +44,11 @@ def _ip_str(b: bytes) -> str:
 class W5500Model:
     BLOCK_SIZE = 0x10000
 
-    def __init__(self):
+    def __init__(self, version: int = W.VERSION, link_up: bool = True, arp_fail: bool = False):
         self.frames: list[Frame] = []      # Completed SPI frames (for assertions).
         self.sent: list[Datagram] = []     # Datagrams transmitted by SEND.
+        # Fault injection: VERSIONR value, PHYCFGR.LNK, SEND ends in Sn_IR.TIMEOUT (ARP failed).
+        self.version, self.link_up, self.arp_fail = version, link_up, arp_fail
         self.reset()
 
     # Memory ------------------------------------------------------------------------------------
@@ -55,8 +58,8 @@ class W5500Model:
         common = self.mem[W.BSB_COMMON]
         common[W.RTR:W.RTR + 2] = (2000).to_bytes(2, "big")
         common[W.RCR] = 8
-        common[W.PHYCFGR] = 0xBF  # Auto-negotiation, 100M full duplex, link up.
-        common[W.VERSIONR] = W.VERSION
+        common[W.PHYCFGR] = 0xBF if self.link_up else 0xBE  # Auto-neg., 100M full duplex.
+        common[W.VERSIONR] = self.version
         for n in range(8):
             regs = self.mem[W.bsb_socket_reg(n)]
             regs[W.Sn_TXBUF_SIZE] = 2
@@ -175,6 +178,8 @@ class W5500Model:
             self._set16(n, W.Sn_TX_FSR, self._buf_size(n, W.Sn_TXBUF_SIZE))
         elif cmd == W.Sn_CR_CLOSE:
             regs[W.Sn_SR] = W.SOCK_CLOSED
+        elif cmd == W.Sn_CR_SEND and regs[W.Sn_SR] == W.SOCK_UDP and self.arp_fail:
+            self._set_ir(n, W.Sn_IR_TIMEOUT)
         elif cmd == W.Sn_CR_SEND and regs[W.Sn_SR] == W.SOCK_UDP:
             rd, wr = self._get16(n, W.Sn_TX_RD), self._get16(n, W.Sn_TX_WR)
             length = (wr - rd) & 0xFFFF

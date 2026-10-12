@@ -6,6 +6,7 @@ Usage:  uv run w5500-gen --preset default --impl stub_rtl --output-dir build/gat
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 
 from . import __version__
@@ -39,7 +40,10 @@ def main(argv=None):
                         help="Implementation (see impl/).")
     parser.add_argument("--build-name", default="w5500_udp", help="Top module / file name.")
     parser.add_argument("--output-dir", default="build/gateware", help="Output directory.")
+    parser.add_argument("--verbose", action="store_true", help="Show LiteX SoC build logs.")
     args = parser.parse_args(argv)
+    if not args.verbose:
+        logging.disable(logging.INFO)  # LiteX SoC banner, bus/CSR maps, hierarchy.
 
     cfg = PRESETS[args.preset]
     path = generate(cfg, args.impl, args.build_name, args.output_dir)

@@ -33,10 +33,14 @@ async def reset(dut, cycles=10):
 
 @cocotb.test()
 async def idle_in_reset(dut):
-    """No SPI traffic, no stream activity and W5500 held in reset while `rst` is high."""
+    """No SPI traffic, no stream activity and W5500 held in reset while `rst` is high.
+
+    `rst` is synchronous: (registered) outputs are only defined after the first `clk` edge.
+    """
     W5500SpiSlave(dut.w5500_spi_sclk, dut.w5500_spi_cs_n, dut.w5500_spi_mosi,
                   dut.w5500_spi_miso).start()
     start(dut)
+    await RisingEdge(dut.clk)
     for _ in range(50):
         await RisingEdge(dut.clk)
         assert dut.w5500_spi_cs_n.value == 1

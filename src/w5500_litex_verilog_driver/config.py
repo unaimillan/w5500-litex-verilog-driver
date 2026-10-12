@@ -33,11 +33,14 @@ def _mac(value: str) -> int:
 class CoreConfig:
     # Clocking.
     clk_freq: int = 50_000_000  # Hz, the core's `clk`.
-    spi_freq: int = 10_000_000  # Hz, target SCLK (actual = clk_freq / even divider).
+    spi_freq: int = 12_500_000  # Hz, target SCLK (actual = clk_freq / even divider).
 
     # User data interface.
-    data_width:  int = 8      # tx_data / rx_data width in bits (8 or 32).
+    data_width:  int = 32      # tx_data / rx_data width in bits (8 or 32).
     max_payload: int = 1472   # Max UDP payload bytes per datagram (1500 MTU - 20 IP - 8 UDP).
+    # Fixed datagram size for implementations that send one datagram per N input bytes
+    # (soc_v1: tx_frame_bytes / 4 handshakes of 32 bits each).
+    tx_frame_bytes: int = 40
 
     # Local network identity.
     mac:     str = "02:00:00:00:00:01"  # Locally administered unicast.
@@ -58,6 +61,12 @@ class CoreConfig:
     # Timing (W5500 datasheet: RSTn low >= 500 us; PLL lock <= 1 ms after reset release).
     reset_hold_us: int = 500
     init_wait_us:  int = 1000
+
+    # Timeouts that end in a sticky status_error (soc_v1). The UDP ARP timeout of the W5500 with
+    # reset RTR/RCR is 1.8 s, so send_timeout_ms must be larger to see Sn_IR.TIMEOUT first.
+    link_timeout_ms: int = 3000  # PHYCFGR.LNK after reset (auto-negotiation takes ~1-3 s).
+    cmd_timeout_us:  int = 1000  # Sn_CR accepted / Sn_SR state change / Sn_TX_FSR free space.
+    send_timeout_ms: int = 3000  # SEND -> Sn_IR.SENDOK or Sn_IR.TIMEOUT.
 
     # Free-form notes (shown in the generated file header), not used by the hardware.
     notes: tuple[str, ...] = field(default=())
@@ -93,6 +102,15 @@ class CoreConfig:
             errors.append(f"mac: {e}")
         check(self.reset_hold_us >= 500, "reset_hold_us must be >= 500 (W5500 RSTn min)")
         check(self.init_wait_us >= 0, "init_wait_us must be >= 0")
+        check(0 < self.tx_frame_bytes <= self.max_payload and self.tx_frame_bytes % 4 == 0,
+              "tx_frame_bytes must be a multiple of 4 in 4..max_payload")
+        for name in ("link_timeout_ms", "cmd_timeout_us", "send_timeout_ms"):
+            check(getattr(self, name) > 0, f"{name} must be > 0")
+        # Firmware busy-waits on a 32-bit cycle counter.
+        longest_us = max(self.reset_hold_us, self.init_wait_us, self.cmd_timeout_us,
+                         1000 * self.link_timeout_ms, 1000 * self.send_timeout_ms)
+        check(self.clk_freq * longest_us // 1_000_000 < 2**31,
+              "waits/timeouts must be < 2**31 clk cycles")
 
         if errors:
             raise ValueError("invalid CoreConfig:\n  " + "\n  ".join(errors))

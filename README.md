@@ -6,13 +6,16 @@ optional hand-written Verilog) into **one self-contained `.v` file**. All settin
 ports, clock, SPI rate, data width) are baked in at generation time; your design only sees
 simple valid/ready streams.
 
-> Status: **scaffold**. The generator, port contract, test bench and W5500 model are in place;
-> the implementations are still placeholders. See [docs/architecture.md](docs/architecture.md).
+> Status: **first implementation, TX only.** `soc_v1` is a LiteX SoC (FemtoRV CPU + LiteSPI)
+> running baked-in firmware. It sends one 40-byte UDP datagram per 10 × 32-bit handshakes and is
+> verified in simulation against a behavioural W5500 model, but not yet on hardware. See
+> [docs/architecture.md](docs/architecture.md#impl-soc_v1).
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) (Python ≥ 3.14 is fetched automatically)
 - Verilator ≥ 5 and Yosys, e.g. from [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
+- RISC-V GCC for the `soc_v1` firmware: `sudo apt install gcc-riscv64-unknown-elf`
 
 ```sh
 uv sync                          # LiteX stack + dev tools (pytest, cocotb, ruff)
@@ -22,7 +25,7 @@ uv sync                          # LiteX stack + dev tools (pytest, cocotb, ruff
 
 ```sh
 make build                                   # -> dist/w5500_udp.v
-make build PRESET=de10lite IMPL=stub_rtl     # pick a config preset / implementation
+make build PRESET=default32 IMPL=soc_v1      # pick a config preset / implementation
 make test                                    # pytest: config, generation, lint, model, cocotb
 make lint                                    # Verilator + Yosys checks of the generated file
 make -j synth-estimate                       # Yosys resource estimate (MAX10/Gowin/Xilinx/Lattice)
@@ -39,7 +42,8 @@ your own entry to `PRESETS` (values are validated on construction):
 
 ```python
 PRESETS["lab"] = CoreConfig(clk_freq=50_000_000, spi_freq=12_500_000, data_width=32,
-                            ip="10.0.0.2", remote_ip="10.0.0.1", local_port=7000, remote_port=7000)
+                            ip="10.0.0.2", remote_ip="10.0.0.1", local_port=7000, remote_port=7000,
+                            tx_frame_bytes=40)
 ```
 
 ## Interface
@@ -71,7 +75,9 @@ src/w5500_litex_verilog_driver/
   config.py      CoreConfig + presets          core.py      port contract, top module
   platform.py    single-file Verilog output    cli.py       `w5500-gen`
   w5500.py       W5500 register map            impl/        interchangeable implementations
+  firmware/      C firmware for SoC-based impls (compiled at generation time)
 rtl/             hand-written (System)Verilog used by impl/ (embedded into the output)
+vendor/          third-party Verilog, pinned and unmodified (FemtoRV32)
 tests/           pytest + cocotb; models/w5500_model.py = behavioral W5500 (SPI slave + UDP)
 docs/            architecture, W5500 notes, prior-art survey
 ```
