@@ -60,3 +60,22 @@ used by every `SEND`.
 - `Sn_IR` bits are cleared by writing 1; `SIR`/`INTn` only assert for unmasked sources (`SIMR`,
   `Sn_IMR`).
 - Max UDP payload without IP fragmentation: 1472 bytes (W5500 does not fragment).
+
+## Lessons from prior art
+
+Mistakes and practices seen in existing drivers (details and authors in `prior-art.md`):
+
+- Generate SCLK as a clock *enable* in the system clock domain. Do not drive logic from a
+  divided fabric clock (riocore's `mclk`).
+- Use VDM bursts: one frame per register group, and one frame per payload. Byte-per-frame
+  costs 4× the SPI time (harout, Reference-FPGA-System).
+- Check `Sn_TX_FSR` against the datagram length before writing. Skipping it overwrites unsent
+  data (harout, riocore).
+- Start payload writes at `Sn_TX_WR`, not `Sn_TX_RD` (Reference-FPGA-System gets away with it
+  only while the buffer is empty).
+- `Sn_IR` lives at `0x0002`; SCIS writes the clear to `0x0003` (`Sn_SR`). Check `TIMEOUT` too, or
+  an ARP failure hangs the send path.
+- Read the full 16 bits of `Sn_RX_RSR`. riocore reads only the low byte.
+- Several datagrams can sit in the RX buffer. Parse per datagram using the 8-byte header's
+  length; don't forward `RSR` bytes as one stream (SCIS).
+- Field note, unverified: drive MOSI = `0xFF` during read data phases (mackerel-68k).

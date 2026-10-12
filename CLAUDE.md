@@ -10,8 +10,9 @@ top module `<name>`, default `w5500_udp`). Python 3.14 via `uv`; Verilator/Yosys
 oss-cad-suite. Design notes and open questions: `docs/architecture.md`; W5500 protocol:
 `docs/w5500-notes.md`.
 
-This project is independent: `include/` (git-ignored) holds unrelated reference repos for
-inspiration only — never import, copy from, or link to them.
+`include/` (git-ignored) holds reference repos and the datasheet. Never depend on `include/`
+paths from the build or tests. Prior art is surveyed in `docs/prior-art.md`; when an idea is
+taken from it, credit the author + repo there (and next to the code that uses it).
 
 ## Commands
 

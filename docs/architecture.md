@@ -61,16 +61,21 @@ once asserted, `valid` and the payload stay stable until accepted.
 
 ## Open questions (for the implementation sessions)
 
+Examples from existing drivers are in [prior-art.md](prior-art.md).
+
 1. **Datagram framing**: keep `last` (one datagram per burst), or a fixed datagram size from
-   config (`last` optional), or both?
+   config (`last` optional), or both? (riocore: fixed size; SCIS: `tlast`.)
 2. **32-bit mode**: byte order inside a word; partial last word (add `tx_keep`/`rx_keep`, or
    require payload lengths that are multiples of 4?).
 3. **TX buffering**: stream straight into the W5500 TX buffer (low area, length known only at
    `last`) vs. a local FIFO; behaviour when the datagram exceeds `max_payload`.
 4. **RX**: filter datagrams by remote IP/port? Expose source IP/port/length as sideband? Drop
-   policy when the user does not drain `rx` in time.
+   policy when the user does not drain `rx` in time. (riocore: magic-ID filter + reply to last
+   sender; SCIS: passes the raw header; verilog-ethernet: separate header handshake.)
 5. **Engine style**: hard-coded FSMs vs. a tiny microcoded sequencer (ROM of SPI ops generated
    from Python) vs. a small soft CPU. The `impl/` registry lets these coexist for comparison.
+   (init ROM + FSM: harout/riocore; big FSM over streaming SPI: SCIS; µ-program:
+   verilog-mic-array; soft CPU: Reference-FPGA-System. See prior-art.md "Engine styles".)
 6. **Polling vs. `INTn`**, SPI clock rate, MISO sampling point at high SCLK.
 7. **Errors / recovery**: link loss, ARP timeout, W5500 not responding — retry, reset, or flag?
 8. **Throughput target** (sets SCLK, burst length and buffer sizes).

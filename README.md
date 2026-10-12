@@ -61,7 +61,8 @@ w5500_udp u_eth (
 
 `tx_data`/`rx_data` are 8 or 32 bits wide (`data_width`). The full contract and the open design
 questions are in [docs/architecture.md](docs/architecture.md); W5500 protocol notes in
-[docs/w5500-notes.md](docs/w5500-notes.md).
+[docs/w5500-notes.md](docs/w5500-notes.md); survey of existing W5500 FPGA drivers (ideas, authors) in
+[docs/prior-art.md](docs/prior-art.md).
 
 ## Layout
 
@@ -72,5 +73,5 @@ src/w5500_litex_verilog_driver/
   w5500.py       W5500 register map            impl/        interchangeable implementations
 rtl/             hand-written (System)Verilog used by impl/ (embedded into the output)
 tests/           pytest + cocotb; models/w5500_model.py = behavioral W5500 (SPI slave + UDP)
-docs/            architecture, W5500 notes
+docs/            architecture, W5500 notes, prior-art survey
 ```
