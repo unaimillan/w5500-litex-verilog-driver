@@ -171,7 +171,8 @@ Measured and estimated results:
   - Xilinx 7: ≈1220 LUT, 600 FF, 2 RAMB18, 33 RAM32M.
   - Lattice XO2: ≈1470 LUT4, 600 FF, 4 DP8KC.
   - Gowin: ≈2000 LUT4, 570 FF; the ROM partly ends up in logic.
-  - MAX10: Yosys `synth_intel` fails to map an initialized M9K (`Can't find object for defparam INIT`), so there is no estimate. **[verify]** with Quartus, including that it honours the inline `initial` ROM init.
+  - MAX10: Yosys `synth_intel` fails to map an initialized M9K (`Can't find object for defparam INIT`), so there is no estimate.
+  - **Quartus 21.1, MAX10** (10M50, the DE10-Lite test design in `tests/hwtest_e2e/`, core + counter source + board I/O): ≈2240 LE, 890 FF, 24.9 kbit RAM, setup slack 4.6 ns at 50 MHz. Quartus honours the inline `initial` ROM init: the ROM becomes an `altsyncram` with an auto-generated MIF.
 
 Findings while building it:
 - **FemtoRV `sel` bug:** LiteX's FemtoRV wrapper drives Wishbone `sel` from the write mask, which is 0 on reads. `Wishbone2CSR` only strobes CSR reads when `sel != 0`, so read-to-pop CSRs (LiteSPIMaster `rxtx`) never pop. `FemtoRVVendored` forces `sel = 0b1111` on reads.
@@ -245,8 +246,9 @@ Measured and estimated results:
   - Lattice XO2: ≈1900 LUT4, 690 FF, 6 DP8KC.
   - Gowin: ≈2050 LUT, 650 FF.
   - MAX10: same `synth_intel` ROM-init limitation as soc_v1.
+  - **Quartus 21.1, MAX10** (DE10-Lite test design, `stream`): ≈2640 LE, 940 FF, 25.8 kbit RAM, setup slack 3.1 ns at 50 MHz.
 
-**[verify]** on hardware (the model completes SEND instantly):
+**[verify]** on hardware with the DE10-Lite test design in `tests/hwtest_e2e/` (see its README). The model completes SEND instantly, so these are still open:
 - **SEND → SENDOK time:** with headers, a 400-byte datagram takes ≈38 µs on the wire at 100 Mbit/s. That adds to the ≈183 µs per datagram unless SEND is overlapped (below). At 10 Mbit/s it takes ≈380 µs, longer than the 227 µs datagram period, so the real-time target needs a 100 Mbit link.
 - **25 MHz SCLK** signal integrity and the MISO sample point on the module (w5500-notes item 10).
 - **Overlapping SEND** of datagram k with the chunk writes of k+1, to hide the W5500's send time. Should be safe, since SEND uses the `Sn_TX_RD..Sn_TX_WR` range latched at SEND, but it is not done yet.

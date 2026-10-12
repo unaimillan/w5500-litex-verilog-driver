@@ -45,8 +45,8 @@ LIST_OPTIONS := $(UV) run --quiet w5500-gen --list
 
 # Targets that need the generated file refuse to run without IMPL: print usage + options.
 ifeq ($(IMPL),)
-ifneq ($(filter generate build lint synth-%,$(MAKECMDGOALS)),)
-$(info usage: make $(firstword $(filter generate build lint synth-%,$(MAKECMDGOALS))) IMPL=<impl> [PRESET=$(PRESET)] [BUILD_NAME=$(BUILD_NAME)])
+ifneq ($(filter generate build lint synth-% hw-gen hw-build,$(MAKECMDGOALS)),)
+$(info usage: make $(firstword $(filter generate build lint synth-% hw-gen hw-build,$(MAKECMDGOALS))) IMPL=<impl> [PRESET=$(PRESET)] [BUILD_NAME=$(BUILD_NAME)])
 $(info )
 $(shell $(LIST_OPTIONS) >&2)
 $(error IMPL is not set (e.g. make build IMPL=stub_migen PRESET=default))
@@ -56,7 +56,8 @@ endif
 # ---- Targets ----------------------------------------------------------------
 
 .DEFAULT_GOAL := help
-.PHONY: help generate build test lint lint-rtl synth-estimate check clean FORCE
+.PHONY: help generate build test lint lint-rtl synth-estimate check clean FORCE \
+        hw-gen hw-build hw-receive
 
 help: ## Show this help
 	@echo "usage: make <target> [IMPL=<impl>] [PRESET=$(PRESET)] [BUILD_NAME=$(BUILD_NAME)]"
@@ -66,7 +67,7 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 	@echo
 	@echo "variables:"
-	@echo "  IMPL             implementation, required by generate/build/lint/synth-*"
+	@echo "  IMPL             implementation, required by generate/build/lint/synth-*/hw-gen/hw-build"
 	@echo "  PRESET           CoreConfig preset (default: $(PRESET))"
 	@echo "  BUILD_NAME       top module / file name (default: $(BUILD_NAME))"
 	@echo
@@ -114,6 +115,22 @@ $(SYNTH_DIR)/%.stat: $(GATEWARE)
 	    -p "read_verilog -sv $<; $(SYNTH_CMD_$*) -top $(BUILD_NAME); tee -q -o $@ stat" >/dev/null 2>&1 || \
 	    { rc=$$?; rm -f $@; echo "[make] $* failed (rc=$$rc, 124 = timeout after $(SYNTH_TIMEOUT)s):" >&2; \
 	      tail -n 5 $(SYNTH_DIR)/$*.log >&2; exit $$rc; }
+
+# ---- Hardware end-to-end test (DE10-Lite, tests/hwtest_e2e/README.md) ----------------------
+# The core preset defaults per impl (soc_v1: de10lite, soc_v2: stream); PRESET= on the command
+# line overrides it. Output: build/hwtest/$(IMPL)/.
+
+HW_RUN    := $(UV) run python -m tests.hwtest_e2e
+HW_PRESET := $(if $(filter command line,$(origin PRESET)),--preset $(PRESET))
+
+hw-gen: ## DE10-Lite test design: core + top Verilog + Quartus project (no Quartus run)
+	$(HW_RUN).de10lite --impl $(IMPL) $(HW_PRESET)
+
+hw-build: ## DE10-Lite test design + Quartus build -> build/hwtest/<impl>/gateware/*.sof
+	$(HW_RUN).de10lite --impl $(IMPL) $(HW_PRESET) --build
+
+hw-receive: ## UDP receiver for the hardware test (RECEIVE_ARGS="--expect-rate 44100")
+	$(HW_RUN).receiver $(RECEIVE_ARGS)
 
 check: ## Python lint (ruff)
 	$(UV) run ruff check .

@@ -15,7 +15,9 @@ simple valid/ready streams.
 
 - [uv](https://docs.astral.sh/uv/) (Python ≥ 3.14 is fetched automatically)
 - Verilator ≥ 5 and Yosys, e.g. from [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
-- RISC-V GCC for the `soc_v1` firmware: `sudo apt install gcc-riscv64-unknown-elf`
+- RISC-V GCC for the `soc_v1`/`soc_v2` firmware: `sudo apt install gcc-riscv64-unknown-elf`
+- Hardware test only: Quartus Prime Lite (21.1 tested) on `PATH`, see
+  [tests/hwtest_e2e/README.md](tests/hwtest_e2e/README.md)
 
 ```sh
 uv sync                          # LiteX stack + dev tools (pytest, cocotb, ruff)
@@ -31,6 +33,7 @@ make build IMPL=soc_v1 PRESET=default32      # pick an implementation / config p
 make test                                    # pytest: config, generation, lint, model, cocotb
 make lint IMPL=stub_rtl                      # Verilator + Yosys checks of the generated file
 make -j synth-estimate IMPL=stub_rtl         # Yosys resource estimate (MAX10/Gowin/Xilinx/Lattice)
+make hw-build IMPL=soc_v2                    # DE10-Lite + W5500 hardware test bitstream (Quartus)
 ```
 
 There is no default implementation: `generate`, `build`, `lint` and `synth-*` need `IMPL=`.

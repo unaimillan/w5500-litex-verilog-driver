@@ -21,12 +21,15 @@ uv sync
 make                       # help (targets, variables, `w5500-gen --list` options)
 make generate IMPL=<impl> [PRESET=default] [BUILD_NAME=w5500_udp]   # no default IMPL
 make build IMPL=<impl>     # + copy to dist/; without IMPL: usage + options
-make test                  # uv run pytest (~250 s; cocotb sims under build/test/)
+make test                  # uv run pytest (~310 s; cocotb sims under build/test/)
 make lint IMPL=<impl>      # Verilator -Wall (+ waivers) on generated file, strict on rtl/, yosys check
 make -j synth-estimate IMPL=<impl>  # yosys MAX10/Gowin/Xilinx/Lattice -> build/synth/*.stat
                            # (soc_v1: add -k, synth_intel can't map initialized M9K)
 make check                 # ruff
 uv run pytest tests/sim/test_cocotb.py -k "default-stub_rtl"   # single sim
+make hw-build IMPL=soc_v2      # DE10-Lite hardware test -> build/hwtest/<impl>/gateware/*.sof
+                           # (Quartus 21.1 from the host mount; hw-gen = no Quartus run)
+make hw-receive               # host-side UDP receiver/checker (tests/hwtest_e2e/README.md)
 ```
 
 ## Architecture

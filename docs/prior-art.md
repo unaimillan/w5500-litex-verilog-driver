@@ -230,6 +230,9 @@ Used here for ideas only.
   talking to a W5500 (UDP send). This is a real-world reference sequence: soft reset, MR
   checks, `VERSIONR`, SHAR/SIPR/GAR/SUBR, `Sn_MR`/`Sn_PORT`/`OPEN`, `Sn_DIPR`/`Sn_DPORT`,
   `Sn_TX_FSR` (read twice), `Sn_TX_WR`, burst, `Sn_TX_WR`, `SEND`.
+- `synth/de10_lite/` + `rtl/common_top.sv`: the DE10-Lite + Arduino-shield wiring of the
+  W5500 Lite (SPI on D10 CS, D11 MOSI, D12 MISO, D13 SCK). `tests/hwtest_e2e/de10lite.py` uses
+  this pin mapping.
 
 ---
 
