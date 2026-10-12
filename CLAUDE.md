@@ -20,7 +20,7 @@ taken from it, credit the author + repo there (and next to the code that uses it
 uv sync
 make generate [PRESET=default] [IMPL=stub_migen] [BUILD_NAME=w5500_udp]
 make build                 # + copy to dist/
-make test                  # uv run pytest (~45 s; cocotb sims under build/test/)
+make test                  # uv run pytest (~105 s; cocotb sims under build/test/)
 make lint                  # Verilator -Wall (+ waivers) on generated file, strict on rtl/, yosys check
 make -j synth-estimate     # yosys MAX10/Gowin/Xilinx/Lattice -> build/synth/*.stat
                            # (soc_v1: add -k, synth_intel can't map initialized M9K)

@@ -92,13 +92,13 @@ and no hand-written RTL; the CPU Verilog is the vendored FemtoRV32 quark
 
 Scope:
 - TX only: the `rx_*` outputs are held idle and `int_n` is unused.
-- `data_width = 32` is required. Other presets are rejected via `SocV1.supports()`, and tests skip them.
+- `data_width = 32` is required (the default). Configs with `data_width = 8` are rejected via `SocV1.supports()`, and tests skip them.
 - One datagram per `tx_frame_bytes` (default 40), i.e. per 10 handshakes.
 - `tx_last` is ignored.
 - Byte order: `tx_data[31:24]` is the first payload byte.
 
 ```
-tx stream ─► TxFramePort (SyncFIFO, 10 × 32 bit) ──wishbone──┐
+tx stream ─► TxFramePort (SyncFIFO, 20 × 32 bit) ──wishbone──┐
                                                                ├─ FemtoRV32 quark ── ROM 4 KiB (firmware)
 W5500 SPI ◄─ LiteSPI SDR PHY ◄─ LiteSPIMaster ◄──── CSR ──────┤                    └ SRAM 1 KiB (stack)
 RSTn / status_ready / status_error ◄─ W5500Ctrl ◄── CSR ──────┘
@@ -111,10 +111,11 @@ Memory map:
 | rom | `0x0000_0000` | firmware (compiled at generation time, inlined into the `.v`) |
 | sram | `0x0100_0000` | .data/.bss/stack |
 | csr | `0x8200_0000` | `spi` (LiteSPIMaster), `spi_phy` (divider, mode), `w5500` (rst_n, ready, error, int_n) |
-| txframe | `0x9000_0000` | `+0` WAIT: read stalls until a whole frame is buffered; `+4` DATA: read pops one word |
+| txframe | `0x9000_0000` | `+0` WAIT: read stalls until ≥ one whole frame is buffered; `+4` DATA: read pops one word |
 
 Hardware details:
 - **`tx_ready`** is `fifo not full & status_ready`, so no input is accepted before bring-up or after an error.
+- **Input FIFO** holds two frames (2 × `tx_frame_bytes / 4` words). Before it pops the first word of a frame, the firmware spends ≈30 µs on `Sn_TX_FSR` / `Sn_TX_WR` reads. With only one frame of buffer, `tx_ready` stayed low that long, and a 44.1 kHz word source overran on the 11th word. The second frame absorbs this.
 - **`status_error`** is a set-only flip-flop: firmware can raise it, but only `rst` clears it. It also forces `status_ready` low.
 - **SCLK** is `clk / (2·spi_div)`, made by LiteSPI's clock-enable generator; there is no derived clock. LiteSPI only divides by even numbers, so the default `spi_freq` is now 12.5 MHz (50 MHz / 4).
 - **Pin registers:** SCLK, MOSI, CS# and MISO go through registers (`SDROutput`/`SDRInput`). Because `rst` is synchronous, these pins are defined only after the first `clk` edge in reset.
@@ -152,10 +153,13 @@ Every failed check calls `fail()`, which sets the sticky error and makes the CPU
 
 Measured and estimated results:
 - **Simulation** (cocotb, W5500 model, 50 MHz, SCLK 12.5 MHz): bring-up takes ≈1.8 ms (1.5 ms of it is the reset wait), and each 40-byte frame takes ≈135 µs from handshake to SENDOK. That is ≈0.3 MB/s, limited by the CPU's per-word CSR handling and the register round trips per frame.
+  - **Back-to-back** source (`tx_valid` always high, 10 / 100 frames): ≈144–148 µs per frame (≈0.27 MB/s). All frames are sent.
+  - **44.1 kHz, one 32-bit word per tick** (a frame every ≈227 µs, 10 / 100 frames): every word is accepted immediately (min slack 22.6 µs). All frames are sent.
+  - **44.1 kHz, one 40-byte frame per tick** (≈1.76 MB/s): not sustainable by v1. The test is marked `expect_fail` and overruns on the second frame.
 - **Firmware size:** ≈1.7 KiB.
 - **Yosys resource estimate** (`make -k -j synth-estimate PRESET=default32 IMPL=soc_v1`):
-  - Xilinx 7: ≈1230 LUT, 600 FF, 2 RAMB18, 33 RAM32M.
-  - Lattice XO2: ≈1430 LUT4, 600 FF, 4 DP8KC.
+  - Xilinx 7: ≈1220 LUT, 600 FF, 2 RAMB18, 33 RAM32M.
+  - Lattice XO2: ≈1470 LUT4, 600 FF, 4 DP8KC.
   - Gowin: ≈2000 LUT4, 570 FF; the ROM partly ends up in logic.
   - MAX10: Yosys `synth_intel` fails to map an initialized M9K (`Can't find object for defparam INIT`), so there is no estimate. **[verify]** with Quartus, including that it honours the inline `initial` ROM init.
 

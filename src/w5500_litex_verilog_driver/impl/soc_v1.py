@@ -90,15 +90,17 @@ cpu.CPUS.setdefault(FemtoRVVendored.name, FemtoRVVendored)
 # Peripherals --------------------------------------------------------------------------------------
 
 class TxFramePort(LiteXModule):
-    """User tx stream -> FIFO of ``words`` 32-bit words, read by the CPU over Wishbone.
+    """User tx stream -> FIFO of two frames (2 x ``words`` 32-bit words), read by the CPU over
+    Wishbone. The second frame keeps tx_ready high while the CPU is busy before it pops the first
+    one (Sn_TX_FSR / Sn_TX_WR reads, ~30 us), so a real-time source is not stalled.
 
-    Word 0 (WAIT): read stalls (ack withheld) until the FIFO holds ``words`` words; returns 0.
+    Word 0 (WAIT): read stalls (ack withheld) until the FIFO holds >= ``words`` words; returns 0.
     Word 1 (DATA): read pops one word; stalls while the FIFO is empty. Writes are ignored.
     """
 
     def __init__(self, tx, words, enable):
         self.bus  = bus  = wishbone.Interface(data_width=32, address_width=32, addressing="word")
-        self.fifo = fifo = stream.SyncFIFO([("data", 32)], words, buffered=False)
+        self.fifo = fifo = stream.SyncFIFO([("data", 32)], 2 * words, buffered=False)
 
         self.comb += [
             fifo.sink.valid.eq(tx.valid & enable),
@@ -109,7 +111,7 @@ class TxFramePort(LiteXModule):
         access   = bus.cyc & bus.stb & ~bus.ack
         is_data  = bus.adr[0]
         pop      = access & ~bus.we & is_data & fifo.source.valid
-        complete = fifo.level == words
+        complete = fifo.level >= words
         self.comb += fifo.source.ready.eq(pop)
         self.sync += [
             bus.ack.eq(0),
