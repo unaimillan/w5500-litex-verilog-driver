@@ -77,5 +77,7 @@ Examples from existing drivers are in [prior-art.md](prior-art.md).
    (init ROM + FSM: harout/riocore; big FSM over streaming SPI: SCIS; µ-program:
    verilog-mic-array; soft CPU: Reference-FPGA-System. See prior-art.md "Engine styles".)
 6. **Polling vs. `INTn`**, SPI clock rate, MISO sampling point at high SCLK.
+   Datasheet gaps that need docs research or hardware experiments are listed in
+   [w5500-notes.md "To clarify"](w5500-notes.md#to-clarify).
 7. **Errors / recovery**: link loss, ARP timeout, W5500 not responding — retry, reset, or flag?
 8. **Throughput target** (sets SCLK, burst length and buffer sizes).

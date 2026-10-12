@@ -1,4 +1,4 @@
-"""WIZnet W5500 register map and protocol constants (from the W5500 datasheet v1.x).
+"""WIZnet W5500 register map and protocol constants (from the W5500 datasheet v1.1.0).
 
 Single source of truth for the Python side (Migen implementations, test models). See
 docs/w5500-notes.md for the SPI frame format and the UDP command sequences.
@@ -50,8 +50,8 @@ IR       = 0x0015  # Interrupt.
 IMR      = 0x0016  # Interrupt mask.
 SIR      = 0x0017  # Socket interrupt.
 SIMR     = 0x0018  # Socket interrupt mask.
-RTR      = 0x0019  # Retry time, 100 us units (2).
-RCR      = 0x001B  # Retry count.
+RTR      = 0x0019  # Retry time, 100 us units (2), reset 2000 = 200 ms.
+RCR      = 0x001B  # Retry count, reset 8. UDP ARP timeout = RTR * 0.1 ms * (RCR + 1).
 UIPR     = 0x0028  # Unreachable IP (4).
 UPORTR   = 0x002C  # Unreachable port (2).
 PHYCFGR  = 0x002E  # PHY configuration.
@@ -90,7 +90,7 @@ Sn_TX_WR      = 0x0024  # (2)
 Sn_RX_RSR     = 0x0026  # RX received size (2), read twice until stable.
 Sn_RX_RD      = 0x0028  # (2)
 Sn_RX_WR      = 0x002A  # (2)
-Sn_IMR        = 0x002C
+Sn_IMR        = 0x002C  # Reset 0xFF; may also gate Sn_IR itself (docs/w5500-notes.md: verify).
 Sn_FRAG       = 0x002D  # (2)
 Sn_KPALVTR    = 0x002F
 
@@ -123,6 +123,7 @@ SOCK_CLOSE_WAIT  = 0x1C
 SOCK_UDP         = 0x22
 SOCK_MACRAW      = 0x42
 
-# In UDP mode every datagram in the RX buffer is prefixed with this header:
+# In UDP mode every datagram in the RX buffer is prefixed with this header (not in the datasheet;
+# from WIZnet ioLibrary and prior art, to verify on hardware: docs/w5500-notes.md "To clarify"):
 # [src IP (4)][src port (2)][payload length (2)], big-endian.
 UDP_RX_HEADER_LEN = 8

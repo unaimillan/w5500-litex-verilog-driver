@@ -169,6 +169,7 @@ ext_data_handler, top_w5500}.vhd`.
   backlog.
 - `Sn_RX_RSR`/`Sn_TX_FSR` are read only once, with no double-read for consistency.
 - The README reports that the socket closes when the 2 KB RX buffer overflows under load.
+  The datasheet does not describe overflow (item 9 in "To clarify" in `w5500-notes.md`).
 - It needs a 2047-deep FIFO per direction in the SPI master.
 
 ## joshuawins99/Reference-FPGA-System
@@ -196,8 +197,9 @@ over an SPI master (`tiny_spi` in the CPLD/FPGA).
   at the buffer end.
 
 **Field note** (not verified by us): "Dummy bytes MUST be 0xFF: a 0-bit on MOSI during a
-W5500 read slips bits". This is worth a test once we have hardware. Driving MOSI high during
-read data phases costs nothing.
+W5500 read slips bits". The datasheet says nothing about MOSI during reads, so this is item 1
+in the "To clarify" list of `w5500-notes.md`. Driving MOSI high during read data phases
+costs nothing.
 
 ## alexforencich/verilog-ethernet
 

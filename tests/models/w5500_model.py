@@ -8,6 +8,9 @@ Two layers:
 
 Not modelled (yet): ARP/timeouts, interrupts pin (INTn), PHY link changes, fixed-length (FDM)
 frames, TCP/MACRAW, MR software reset side effects beyond register defaults.
+
+Assumed where the datasheet is silent (see "To clarify" in docs/w5500-notes.md): VDM bursts wrap
+inside a socket buffer, the 8-byte UDP RX header format, and MOSI content is ignored on reads.
 """
 
 from __future__ import annotations
