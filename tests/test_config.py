@@ -17,6 +17,7 @@ def test_derived_values():
     assert cfg.mac_int == 0x021122334455
     assert cfg.ip_int == 0x0A000002
     assert cfg.cycles(500) == 25_000
+    assert CoreConfig(tx_chunk_bytes=40, tx_chunks_per_datagram=10).tx_datagram_bytes == 400
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -31,6 +32,9 @@ def test_derived_values():
     ({"tx_buf_kb": 3},                 "tx_buf_kb"),
     ({"tx_buf_kb": 1},                 "max_payload must fit"),
     ({"reset_hold_us": 10},            "reset_hold_us"),
+    ({"tx_chunk_bytes": 42},           "tx_chunk_bytes must be a multiple of 4"),
+    ({"tx_chunks_per_datagram": 0},    "tx_chunks_per_datagram must be >= 1"),
+    ({"tx_chunks_per_datagram": 37},   "must be <= max_payload"),
 ])
 def test_invalid(changes, message):
     with pytest.raises(ValueError, match=message):

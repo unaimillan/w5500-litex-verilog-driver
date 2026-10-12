@@ -1,7 +1,8 @@
 """cocotb behaviour tests for implementations with a TX path (see tests/test_cocotb.py).
 
 The W5500 is the behavioural model from tests/models; the preset comes from ``W5500_PRESET``.
-Implementations under test send one datagram per ``tx_frame_bytes`` input bytes.
+Implementations under test send one datagram per ``tx_chunks_per_datagram`` chunks of
+``tx_chunk_bytes`` input bytes. Test sizes (``packets``) count chunks.
 """
 
 import os
@@ -17,15 +18,18 @@ from w5500_litex_verilog_driver import w5500 as W
 from w5500_litex_verilog_driver.config import PRESETS
 
 CFG = PRESETS[os.environ.get("W5500_PRESET", "default32")]
-WORDS = CFG.tx_frame_bytes // 4
+WORDS  = CFG.tx_chunk_bytes // 4          # Words per chunk.
+CHUNKS = CFG.tx_chunks_per_datagram       # Chunks per datagram.
 assert CFG.clk_freq == 1_000_000_000 // CLK_PERIOD_NS, "testbench clock must match clk_freq"
 
 # Bring-up = reset hold + PLL wait + a few hundred SPI frames; generous margin.
 INIT_CYCLES = CFG.cycles(CFG.reset_hold_us + CFG.init_wait_us + 2000)
-# Generous upper bound for one buffered frame to leave as a datagram (soc_v1: ~135 us).
-FRAME_CYCLES = CFG.cycles(1000)
+# Generous upper bound for the buffered input to leave as datagrams once the source is done.
+DRAIN_CYCLES = CFG.cycles(2000)
 
 SAMPLE_RATE = 44_100  # Hz, real-time source tests.
+# The (impl, preset) under test sustains one chunk per 1/SAMPLE_RATE (see tests/test_cocotb.py).
+PACKET_RATE_OK = os.environ.get("W5500_PACKET_RATE_OK") == "1"
 
 
 def attach(dut, **faults) -> W5500Model:
@@ -101,17 +105,26 @@ async def send_realtime(dut, chunks, period_ns):
     return min_slack
 
 
-def random_frames(n):
+def random_chunks(n):
+    assert n % CHUNKS == 0, f"{n} chunks do not fill whole datagrams of {CHUNKS}"
     return [[random.getrandbits(32) for _ in range(WORDS)] for _ in range(n)]
 
 
-def check_sent(model, frames):
-    """Every frame left the W5500 as one datagram, in order, to the remote endpoint."""
-    assert len(model.sent) == len(frames)
-    for i, (dgram, words) in enumerate(zip(model.sent, frames, strict=True)):
+def check_sent(model, chunks):
+    """Every CHUNKS chunks left the W5500 as one datagram, in order, to the remote endpoint."""
+    dgrams = [[w for c in chunks[i:i + CHUNKS] for w in c] for i in range(0, len(chunks), CHUNKS)]
+    assert len(model.sent) == len(dgrams)
+    for i, (dgram, words) in enumerate(zip(model.sent, dgrams, strict=True)):
         assert dgram.payload == expected_payload(words), f"datagram {i} payload"
         assert dgram.ip == CFG.remote_ip
         assert dgram.port == CFG.remote_port
+
+
+def log_rate(dut, what, n_chunks, start_ns):
+    us = (get_sim_time("ns") - start_ns) / 1000
+    dut._log.info(f"{what}: {us / n_chunks:.1f} us per chunk, "
+                  f"{us * CHUNKS / n_chunks:.1f} us per datagram "
+                  f"({n_chunks * CFG.tx_chunk_bytes / us:.2f} MB/s)")
 
 
 def expected_payload(words) -> bytes:
@@ -138,44 +151,40 @@ async def init_configures_w5500(dut):
 
 
 @cocotb.test()
-async def frames_become_datagrams(dut):
-    """Every tx_frame_bytes input bytes are sent as one datagram to the remote endpoint."""
+async def chunks_become_datagrams(dut):
+    """Every CHUNKS x tx_chunk_bytes input bytes are sent as one datagram to the remote endpoint."""
     random.seed(1)
     model = attach(dut)
     await reset(dut)
     await wait_ready(dut)
 
-    frames = random_frames(3)
+    chunks = random_chunks(3 * CHUNKS)
     start = get_sim_time("ns")
-    for words in frames:
+    for words in chunks:
         await send_words(dut, words)
-    await wait_for(dut, lambda: len(model.sent) == len(frames), 200_000, "datagrams")
-    per_frame_us = (get_sim_time("ns") - start) / len(frames) / 1000
-    dut._log.info(f"{len(frames)} frames, {per_frame_us:.1f} us per frame "
-                  f"({CFG.tx_frame_bytes / per_frame_us:.2f} MB/s)")
+    await wait_for(dut, lambda: len(model.sent) == 3, DRAIN_CYCLES, "datagrams")
+    log_rate(dut, f"{len(chunks)} chunks, random gaps", len(chunks), start)
 
-    check_sent(model, frames)
+    check_sent(model, chunks)
     assert dut.status_error.value == 0
 
 
 @cocotb.test()
 @cocotb.parametrize(packets=[10, 100])
-async def back_to_back_frames(dut, packets):
+async def back_to_back_chunks(dut, packets):
     """tx_valid never drops: the source is throttled by tx_ready only; nothing is lost."""
     random.seed(packets)
     model = attach(dut)
     await reset(dut)
     await wait_ready(dut)
 
-    frames = random_frames(packets)
+    chunks = random_chunks(packets)
     start = get_sim_time("ns")
-    await send_words(dut, [w for words in frames for w in words], gap_prob=0)
-    await wait_for(dut, lambda: len(model.sent) == packets, 2 * FRAME_CYCLES, "datagrams")
-    per_frame_us = (get_sim_time("ns") - start) / packets / 1000
-    dut._log.info(f"{packets} back-to-back frames, {per_frame_us:.1f} us per frame "
-                  f"({CFG.tx_frame_bytes / per_frame_us:.2f} MB/s)")
+    await send_words(dut, [w for words in chunks for w in words], gap_prob=0)
+    await wait_for(dut, lambda: len(model.sent) == packets // CHUNKS, DRAIN_CYCLES, "datagrams")
+    log_rate(dut, f"{packets} back-to-back chunks", packets, start)
 
-    check_sent(model, frames)
+    check_sent(model, chunks)
     assert dut.status_error.value == 0
 
 
@@ -185,32 +194,33 @@ async def realtime_test(dut, packets, words_per_tick):
     await reset(dut)
     await wait_ready(dut)
 
-    frames = random_frames(packets)
-    words = [w for f in frames for w in f]
-    chunks = [words[i:i + words_per_tick] for i in range(0, len(words), words_per_tick)]
-    min_slack = await send_realtime(dut, chunks, 1e9 / SAMPLE_RATE)
-    dut._log.info(f"{len(chunks)} ticks at {SAMPLE_RATE} Hz, {words_per_tick} word(s) each: "
+    chunks = random_chunks(packets)
+    words = [w for c in chunks for w in c]
+    ticks = [words[i:i + words_per_tick] for i in range(0, len(words), words_per_tick)]
+    min_slack = await send_realtime(dut, ticks, 1e9 / SAMPLE_RATE)
+    dut._log.info(f"{len(ticks)} ticks at {SAMPLE_RATE} Hz, {words_per_tick} word(s) each: "
                   f"min slack {min_slack / 1000:.1f} us")
-    await wait_for(dut, lambda: len(model.sent) == packets, 2 * FRAME_CYCLES, "datagrams")
+    await wait_for(dut, lambda: len(model.sent) == packets // CHUNKS, DRAIN_CYCLES, "datagrams")
 
-    check_sent(model, frames)
+    check_sent(model, chunks)
     assert dut.status_error.value == 0
 
 
 @cocotb.test()
 @cocotb.parametrize(packets=[10, 100])
 async def realtime_44k1_word_rate(dut, packets):
-    """One 32-bit word per 1/44100 s (audio sample rate), one datagram per tx_frame_bytes:
-    every word is accepted before the next one is due and every frame is sent."""
+    """One 32-bit word per 1/44100 s (audio sample rate): every word is accepted before the
+    next one is due and every datagram is sent."""
     await realtime_test(dut, packets, 1)
 
 
-@cocotb.test(expect_fail=True)
+@cocotb.test(expect_fail=not PACKET_RATE_OK)
 @cocotb.parametrize(packets=[10, 100])
 async def realtime_44k1_packet_rate(dut, packets):
-    """One whole frame per 1/44100 s (~1.76 MB/s for 40-byte frames). Beyond soc_v1 (~0.3 MB/s,
-    see docs/architecture.md), so it is expected to fail with an overrun; an unexpected pass
-    means an implementation now sustains this rate."""
+    """One whole chunk per 1/44100 s (~1.76 MB/s for 40-byte chunks). Must pass where
+    W5500_PACKET_RATE_OK is set (soc_v2 on the stream preset); elsewhere (soc_v1: ~0.3 MB/s, see
+    docs/architecture.md) it is an expected failure with an overrun, and an unexpected pass means
+    the implementation now sustains this rate."""
     await realtime_test(dut, packets, WORDS)
 
 
@@ -248,7 +258,7 @@ async def arp_timeout_is_sticky_error(dut):
     model = attach(dut, arp_fail=True)
     await reset(dut)
     await wait_ready(dut)
-    await send_words(dut, list(range(WORDS)))
+    await send_words(dut, list(range(WORDS * CHUNKS)))  # One datagram.
     await wait_for(dut, lambda: dut.status_error.value == 1, 100_000, "status_error")
     await ClockCycles(dut.clk, 100)
     assert dut.status_error.value == 1

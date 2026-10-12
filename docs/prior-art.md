@@ -267,7 +267,8 @@ Used here for ideas only.
 
 ## Third-party code used
 
-- **FemtoRV32 "quark"** (Bruno Levy, Matthias Koch), the CPU of `soc_v1`.
-  - Source: <https://github.com/BrunoLevy/learn-fpga>, file `FemtoRV/RTL/PROCESSOR/femtorv32_quark.v` at commit `5c08c870315c09ccd9ec64ccde20ab3375b3f273`.
+- **FemtoRV32 "quark"** and **"quark_bicycle"** (Bruno Levy, Matthias Koch), the CPUs of `soc_v1` and `soc_v2`.
+  - Source: <https://github.com/BrunoLevy/learn-fpga>, files `FemtoRV/RTL/PROCESSOR/femtorv32_quark.v` and `femtorv32_quark_bicycle.v` at commit `5c08c870315c09ccd9ec64ccde20ab3375b3f273`.
+  - quark_bicycle is the same RV32I core with an overlapped fetch, about 20 % fewer cycles per instruction.
   - Vendored unmodified in `vendor/femtorv/`, used through LiteX's FemtoRV wrapper.
 

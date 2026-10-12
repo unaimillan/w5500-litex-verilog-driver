@@ -1,4 +1,4 @@
-// soc_v1 firmware: bring up the W5500, open one UDP socket, then forward fixed-size frames from
+// soc_v1 firmware: bring up the W5500, open one UDP socket, then forward fixed-size chunks from
 // TxFramePort into the socket TX buffer and SEND each one. Any failure is sticky (fail()).
 //
 // generated/csr.h (CSR map), generated/config.h (CoreConfig + W5500 constants) are written by
@@ -12,7 +12,7 @@
 
 #define REG(addr) (*(volatile uint32_t *)(addr))
 
-#define FRAME_WAIT REG(FRAME_BASE + 0)  // Stalls until FRAME_WORDS words are buffered.
+#define FRAME_WAIT REG(FRAME_BASE + 0)  // Stalls until CHUNK_WORDS words are buffered.
 #define FRAME_DATA REG(FRAME_BASE + 4)  // Pops one 32-bit word.
 
 #define SPI_TX_READY (1u << CSR_SPI_STATUS_TX_READY_OFFSET)
@@ -180,11 +180,11 @@ static void w5500_init(void) {
     wait_reg(W_BSB_SREG, W_Sn_SR, 0xff, W_SOCK_UDP, CMD_TIMEOUT_CYCLES);
 }
 
-// One frame: FIFO -> socket TX buffer (one VDM burst at Sn_TX_WR) -> SEND -> SENDOK -----------
+// One chunk (= one datagram): FIFO -> socket TX buffer (VDM burst at Sn_TX_WR) -> SEND -> SENDOK
 
 static void send_frame(void) {
     uint32_t t0 = now();
-    while (r16_stable(W_BSB_SREG, W_Sn_TX_FSR) < FRAME_BYTES)
+    while (r16_stable(W_BSB_SREG, W_Sn_TX_FSR) < CHUNK_BYTES)
         if (now() - t0 > CMD_TIMEOUT_CYCLES)
             fail();
 
@@ -193,14 +193,14 @@ static void send_frame(void) {
     // Keep one transfer queued ahead (LiteSPIMaster TX/RX FIFOs are 2 deep).
     spi_begin(W_BSB_STX, wr, W_CTRL_WRITE);
     spi_push(32, FRAME_DATA);
-    for (uint32_t i = 1; i < FRAME_WORDS; i++) {
+    for (uint32_t i = 1; i < CHUNK_WORDS; i++) {
         spi_push(32, FRAME_DATA);
         spi_pop();
     }
     spi_pop();
     spi_end();
 
-    w16(W_BSB_SREG, W_Sn_TX_WR, (wr + FRAME_BYTES) & 0xffff);
+    w16(W_BSB_SREG, W_Sn_TX_WR, (wr + CHUNK_BYTES) & 0xffff);
     socket_command(W_Sn_CR_SEND);
 
     t0 = now();
@@ -220,7 +220,7 @@ int main(void) {
     w5500_init();
     REG(CSR_W5500_READY_ADDR) = 1;
     for (;;) {
-        (void)FRAME_WAIT;  // Bus stall until the user has handed over a whole frame.
+        (void)FRAME_WAIT;  // Bus stall until the user has handed over a whole chunk.
         send_frame();
     }
 }

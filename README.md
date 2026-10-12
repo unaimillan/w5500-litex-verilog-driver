@@ -46,7 +46,7 @@ your own entry to `PRESETS` (values are validated on construction):
 ```python
 PRESETS["lab"] = CoreConfig(clk_freq=50_000_000, spi_freq=12_500_000, data_width=32,
                             ip="10.0.0.2", remote_ip="10.0.0.1", local_port=7000, remote_port=7000,
-                            tx_frame_bytes=40)
+                            tx_chunk_bytes=40, tx_chunks_per_datagram=1)
 ```
 
 ## Interface

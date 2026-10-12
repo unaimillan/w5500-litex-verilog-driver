@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from . import soc_v1, stub_migen, stub_rtl
+from . import soc_v1, soc_v2, stub_migen, stub_rtl
 
 RTL_DIR = Path(__file__).resolve().parents[3] / "rtl"
 
@@ -31,6 +31,7 @@ IMPLEMENTATIONS: dict[str, Callable] = {
     "stub_migen": stub_migen.StubMigen,
     "stub_rtl":   stub_rtl.StubRtl,
     "soc_v1":     soc_v1.SocV1,
+    "soc_v2":     soc_v2.SocV2,
 }
 
 

@@ -1,17 +1,18 @@
 """soc_v1: TX-only core as a small LiteX SoC (FemtoRV + LiteSPI) running baked-in firmware.
 
-    tx stream --> TxFramePort (FIFO, tx_frame_bytes/4 words) --wishbone--+
+    tx stream --> TxFramePort (FIFO, tx_chunk_bytes/4 words) --wishbone--+
                                                                           FemtoRV (quark) + ROM/SRAM
     W5500 SPI <-- LiteSPI PHY <-- LiteSPIMaster (CSRs) <-------------CSR--+
     W5500 RSTn, status <------------------- W5500Ctrl (CSRs) <--------CSR--+
 
 The firmware (``firmware/soc_v1/``) is compiled at generation time with the CoreConfig values and
 the CSR map of this SoC, then baked into the ROM. It resets and configures the W5500, opens the
-UDP socket and raises ``status_ready``; then, per frame, it stalls on ``TxFramePort.WAIT`` until
-the FIFO holds a whole frame, copies it with one VDM burst into the socket TX buffer and SENDs.
+UDP socket and raises ``status_ready``; then, per chunk, it stalls on ``TxFramePort.WAIT`` until
+the FIFO holds a whole chunk, copies it with one VDM burst into the socket TX buffer and SENDs it
+as one datagram.
 Any failure sets the sticky ``status_error`` (cleared by ``rst`` only). See docs/architecture.md.
 
-Limits: TX only (rx outputs idle), fixed datagram size, ``tx_last`` ignored, data_width 32.
+Limits: TX only (rx outputs idle), one chunk per datagram, ``tx_last`` ignored, data_width 32.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 from litespi.core.master import LiteSPIMaster
 from litespi.phy.generic_sdr import LiteSPISDRPHYCore
@@ -49,6 +51,8 @@ def supports(cfg) -> str | None:
     """Reason why ``cfg`` cannot be built with this implementation, or None."""
     if cfg.data_width != 32:
         return "soc_v1 needs data_width = 32"
+    if cfg.tx_chunks_per_datagram != 1:
+        return "soc_v1 sends one chunk per datagram (tx_chunks_per_datagram = 1)"
     if shutil.which(GCC_PREFIX + "gcc") is None:
         return f"{GCC_PREFIX}gcc not found (apt install gcc-riscv64-unknown-elf)"
     return None
@@ -57,7 +61,7 @@ def supports(cfg) -> str | None:
 # CPU: LiteX FemtoRV wrapper, but with the vendored Verilog instead of a wget at build time --------
 
 class FemtoRVVendored(FemtoRV):
-    """LiteX ``FemtoRV`` with two fixes.
+    """LiteX ``FemtoRV`` with two fixes, limited to the vendored variants (all RV32I).
 
     - Verilog comes from ``vendor/`` (upstream ``add_sources`` wgets into the cwd).
     - Reads get ``sel = 0b1111``. The upstream wrapper drives ``sel`` from the write mask, which
@@ -65,7 +69,10 @@ class FemtoRVVendored(FemtoRV):
       ``sel != 0``, so read-to-pop CSRs such as LiteSPIMaster ``rxtx`` would never pop.
     """
 
-    name = "femtorv_vendored"
+    name     = "femtorv_vendored"
+    sources:  ClassVar[dict[str, str]] = {"quark":         "femtorv32_quark",
+                                          "quark_bicycle": "femtorv32_quark_bicycle"}
+    variants: ClassVar[list[str]]      = list(sources)
 
     def __init__(self, platform, variant="standard"):
         FemtoRV.__init__(self, platform, variant)
@@ -78,10 +85,13 @@ class FemtoRVVendored(FemtoRV):
         ]
         self.periph_buses = [bus]
 
-    @staticmethod
-    def add_sources(platform, variant):
-        assert variant in ("standard", "quark"), "only the quark variant is vendored"
-        platform.add_source(str(VENDOR_DIR / "femtorv" / "femtorv32_quark.v"))
+    @property
+    def gcc_flags(self):
+        return "-march=rv32i2p0 -mabi=ilp32 -D__femtorv__"
+
+    @classmethod
+    def add_sources(cls, platform, variant):
+        platform.add_source(str(VENDOR_DIR / "femtorv" / f"{cls.sources[variant]}.v"))
 
 
 cpu.CPUS.setdefault(FemtoRVVendored.name, FemtoRVVendored)
@@ -178,7 +188,7 @@ class SocV1(SoCCore):
         ]
 
         # Frame input.
-        self.txframe = TxFramePort(pads.tx, cfg.tx_frame_bytes // 4, pads.status.ready)
+        self.txframe = TxFramePort(pads.tx, cfg.tx_chunk_bytes // 4, pads.status.ready)
         self.bus.add_slave("txframe", self.txframe.bus,
                            SoCRegion(origin=FRAME_BASE, size=0x10, cached=False))
 
@@ -192,8 +202,9 @@ class SocV1(SoCCore):
 
 # Firmware -----------------------------------------------------------------------------------------
 
-def config_header(cfg) -> str:
-    """C header with the CoreConfig values (as bytes / clk cycles) and the W5500 constants."""
+def config_header(cfg, extra=None) -> str:
+    """C header with the CoreConfig values (as bytes / clk cycles), the W5500 constants and the
+    implementation-specific ``extra`` defines."""
     n = cfg.socket
 
     def be(value, nbytes):
@@ -201,8 +212,10 @@ def config_header(cfg) -> str:
 
     defines = {
         "FRAME_BASE":          f"0x{FRAME_BASE:08x}u",
-        "FRAME_WORDS":         cfg.tx_frame_bytes // 4,
-        "FRAME_BYTES":         cfg.tx_frame_bytes,
+        "CHUNK_WORDS":         cfg.tx_chunk_bytes // 4,
+        "CHUNK_BYTES":         cfg.tx_chunk_bytes,
+        "CHUNKS":              cfg.tx_chunks_per_datagram,
+        "DGRAM_BYTES":         cfg.tx_datagram_bytes,
         "RESET_HOLD_CYCLES":   cfg.cycles(cfg.reset_hold_us),
         "INIT_WAIT_CYCLES":    cfg.cycles(cfg.init_wait_us),
         "LINK_TIMEOUT_CYCLES": cfg.cycles(1000 * cfg.link_timeout_ms),
@@ -215,6 +228,7 @@ def config_header(cfg) -> str:
         "W_CTRL_READ":         W.control_byte(0, False),
         "TX_BUF_KB":           cfg.tx_buf_kb,
         "RX_BUF_KB":           cfg.rx_buf_kb,
+        **(extra or {}),
     }
     regs = ("GAR", "SUBR", "SHAR", "SIPR", "VERSIONR", "VERSION", "PHYCFGR", "PHYCFGR_LNK",
             "Sn_MR", "Sn_CR", "Sn_IR", "Sn_SR", "Sn_PORT", "Sn_DIPR", "Sn_DPORT",
@@ -223,7 +237,7 @@ def config_header(cfg) -> str:
     for r in regs:
         defines[f"W_{r}"] = f"0x{getattr(W, r):02x}"
 
-    lines = ["// Generated by impl/soc_v1.py from CoreConfig - do not edit.", "#pragma once", ""]
+    lines = ["// Generated by impl/soc_*.py from CoreConfig - do not edit.", "#pragma once", ""]
     lines += [f"#define {k:<20} {v}" for k, v in defines.items()]
     lines += [
         "",
@@ -239,15 +253,16 @@ def config_header(cfg) -> str:
     return "\n".join(lines)
 
 
-def build_firmware(soc, cfg) -> list[int]:
-    """Compile firmware/soc_v1 for ``soc``; returns the ROM contents as 32-bit words."""
+def build_firmware(soc, cfg, fw_dir=FIRMWARE_DIR, extra=None) -> list[int]:
+    """Compile ``fw_dir`` (crt0.S, main.c, linker.ld) for ``soc``; returns the ROM contents as
+    32-bit words. ``extra``: additional config.h defines."""
     gcc = GCC_PREFIX + "gcc"
     with tempfile.TemporaryDirectory(prefix="w5500_fw_") as tmp:
         gen = Path(tmp) / "generated"
         gen.mkdir()
         (gen / "csr.h").write_text(export.get_csr_header(soc.csr_regions, soc.constants,
                                                          with_access_functions=False))
-        (gen / "config.h").write_text(config_header(cfg))
+        (gen / "config.h").write_text(config_header(cfg, extra))
         rom, sram = soc.mem_regions["rom"], soc.mem_regions["sram"]
         (Path(tmp) / "regions.ld").write_text(
             "MEMORY {\n"
@@ -257,8 +272,8 @@ def build_firmware(soc, cfg) -> list[int]:
         elf, binf = Path(tmp) / "fw.elf", Path(tmp) / "fw.bin"
         cmd = [gcc, *soc.cpu.gcc_flags.split(), "-Os", "-g0", "-ffreestanding", "-nostdlib",
                "-fno-builtin", "-Wall", "-Wextra", "-Werror", "-I", tmp,
-               "-L", tmp, "-T", str(FIRMWARE_DIR / "linker.ld"),
-               "-o", str(elf), str(FIRMWARE_DIR / "crt0.S"), str(FIRMWARE_DIR / "main.c"),
+               "-L", tmp, "-T", str(fw_dir / "linker.ld"),
+               "-o", str(elf), str(fw_dir / "crt0.S"), str(fw_dir / "main.c"),
                "-lgcc"]
         subprocess.run(cmd, check=True)
         subprocess.run([GCC_PREFIX + "objcopy", "-O", "binary", str(elf), str(binf)], check=True)

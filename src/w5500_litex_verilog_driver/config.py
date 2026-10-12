@@ -38,9 +38,10 @@ class CoreConfig:
     # User data interface.
     data_width:  int = 32      # tx_data / rx_data width in bits (8 or 32).
     max_payload: int = 1472   # Max UDP payload bytes per datagram (1500 MTU - 20 IP - 8 UDP).
-    # Fixed datagram size for implementations that send one datagram per N input bytes
-    # (soc_v1: tx_frame_bytes / 4 handshakes of 32 bits each).
-    tx_frame_bytes: int = 40
+    # Fixed-size TX framing (soc_*): a chunk = tx_chunk_bytes / 4 handshakes of 32 bits, written
+    # into the W5500 as one SPI burst; a datagram (UDP packet) = tx_chunks_per_datagram chunks.
+    tx_chunk_bytes:         int = 40
+    tx_chunks_per_datagram: int = 1
 
     # Local network identity.
     mac:     str = "02:00:00:00:00:01"  # Locally administered unicast.
@@ -102,8 +103,11 @@ class CoreConfig:
             errors.append(f"mac: {e}")
         check(self.reset_hold_us >= 500, "reset_hold_us must be >= 500 (W5500 RSTn min)")
         check(self.init_wait_us >= 0, "init_wait_us must be >= 0")
-        check(0 < self.tx_frame_bytes <= self.max_payload and self.tx_frame_bytes % 4 == 0,
-              "tx_frame_bytes must be a multiple of 4 in 4..max_payload")
+        check(0 < self.tx_chunk_bytes <= self.max_payload and self.tx_chunk_bytes % 4 == 0,
+              "tx_chunk_bytes must be a multiple of 4 in 4..max_payload")
+        check(self.tx_chunks_per_datagram >= 1, "tx_chunks_per_datagram must be >= 1")
+        check(self.tx_datagram_bytes <= self.max_payload,
+              "tx_chunk_bytes * tx_chunks_per_datagram must be <= max_payload")
         for name in ("link_timeout_ms", "cmd_timeout_us", "send_timeout_ms"):
             check(getattr(self, name) > 0, f"{name} must be > 0")
         # Firmware busy-waits on a 32-bit cycle counter.
@@ -138,6 +142,10 @@ class CoreConfig:
         return _ip(self.remote_ip)
 
     @property
+    def tx_datagram_bytes(self) -> int:
+        return self.tx_chunk_bytes * self.tx_chunks_per_datagram
+
+    @property
     def spi_div(self) -> int:
         """clk cycles per SCLK half-period (>= 1); actual SCLK = clk_freq / (2 * spi_div)."""
         return max(1, -(-self.clk_freq // (2 * self.spi_freq)))  # ceil: never exceed spi_freq.
@@ -151,7 +159,7 @@ class CoreConfig:
 
     def summary(self) -> list[str]:
         """Human-readable ``key = value`` lines (used in the generated file header)."""
-        return [f"{f.name:<13} = {getattr(self, f.name)}" for f in dataclasses.fields(self)
+        return [f"{f.name:<22} = {getattr(self, f.name)}" for f in dataclasses.fields(self)
                 if f.name != "notes"] + [f"note: {n}" for n in self.notes]
 
 
@@ -161,4 +169,7 @@ PRESETS: dict[str, CoreConfig] = {
     # DE10-Lite (50 MHz MAX10 oscillator) + W5500 Lite.
     "de10lite": CoreConfig(clk_freq=50_000_000, spi_freq=12_500_000,
                            notes=("Terasic DE10-Lite + WIZnet W5500 Lite",)),
+    # Streaming target of soc_v2: 25 MHz SCLK, 400-byte datagrams of 10 x 40-byte chunks.
+    "stream": CoreConfig(spi_freq=25_000_000, tx_chunks_per_datagram=10,
+                         notes=("25 MHz SCLK, 10 chunks of 40 B per datagram",)),
 }

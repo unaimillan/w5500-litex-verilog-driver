@@ -82,6 +82,16 @@ Examples from existing drivers are in [prior-art.md](prior-art.md).
 7. **Errors / recovery**: link loss, ARP timeout, W5500 not responding — retry, reset, or flag?
 8. **Throughput target** (sets SCLK, burst length and buffer sizes).
 
+## Terminology (TX framing)
+
+| term | meaning | config |
+|---|---|---|
+| word | one 32-bit `tx_data` handshake (e.g. one mic sample) | `data_width = 32` |
+| chunk | the unit the producer hands over and the core writes into the W5500 as one SPI (VDM) burst | `tx_chunk_bytes` (default 40 = 10 words) |
+| datagram | one UDP packet: `tx_chunks_per_datagram` chunks, SENT once all are in the socket TX buffer | `tx_chunks_per_datagram` (default 1; preset `stream`: 10 → 400 B) |
+
+"Frame" is avoided: it already means an SPI frame (W5500), an Ethernet frame and an audio frame.
+
 <a id="impl-soc_v1"></a>
 ## Implementation `soc_v1`: LiteX SoC (FemtoRV + LiteSPI) + firmware
 
@@ -93,7 +103,7 @@ and no hand-written RTL; the CPU Verilog is the vendored FemtoRV32 quark
 Scope:
 - TX only: the `rx_*` outputs are held idle and `int_n` is unused.
 - `data_width = 32` is required (the default). Configs with `data_width = 8` are rejected via `SocV1.supports()`, and tests skip them.
-- One datagram per `tx_frame_bytes` (default 40), i.e. per 10 handshakes.
+- One datagram per chunk (`tx_chunk_bytes`, default 40, i.e. 10 handshakes). Configs with `tx_chunks_per_datagram > 1` are rejected.
 - `tx_last` is ignored.
 - Byte order: `tx_data[31:24]` is the first payload byte.
 
@@ -115,7 +125,7 @@ Memory map:
 
 Hardware details:
 - **`tx_ready`** is `fifo not full & status_ready`, so no input is accepted before bring-up or after an error.
-- **Input FIFO** holds two frames (2 × `tx_frame_bytes / 4` words). Before it pops the first word of a frame, the firmware spends ≈30 µs on `Sn_TX_FSR` / `Sn_TX_WR` reads. With only one frame of buffer, `tx_ready` stayed low that long, and a 44.1 kHz word source overran on the 11th word. The second frame absorbs this.
+- **Input FIFO** holds two frames (2 × `tx_chunk_bytes / 4` words). Before it pops the first word of a frame, the firmware spends ≈30 µs on `Sn_TX_FSR` / `Sn_TX_WR` reads. With only one frame of buffer, `tx_ready` stayed low that long, and a 44.1 kHz word source overran on the 11th word. The second frame absorbs this.
 - **`status_error`** is a set-only flip-flop: firmware can raise it, but only `rst` clears it. It also forces `status_ready` low.
 - **SCLK** is `clk / (2·spi_div)`, made by LiteSPI's clock-enable generator; there is no derived clock. LiteSPI only divides by even numbers, so the default `spi_freq` is now 12.5 MHz (50 MHz / 4).
 - **Pin registers:** SCLK, MOSI, CS# and MISO go through registers (`SDROutput`/`SDRInput`). Because `rst` is synchronous, these pins are defined only after the first `clk` edge in reset.
@@ -173,5 +183,74 @@ Possible next steps:
 - Skip the TX_FSR check while frames ≤ the buffer and SENDOK is awaited.
 - Merge the 1-byte register ops into a single 32-bit transfer.
 - Use a faster FemtoRV variant, or let hardware stream DATA → SPI.
+
+All four are done in [`soc_v2`](#impl-soc_v2).
+
+<a id="impl-soc_v2"></a>
+## Implementation `soc_v2`: CPU on the control plane, chunks streamed FIFO → SPI in hardware
+
+Implementation attempt v2, `impl/soc_v2.py` + `firmware/soc_v2/`. Its goal: 8 mics × 44.1 kHz ×
+32 bit ≈ 1.41 MB/s in real time. Same scope, bring-up, error handling and byte order as soc_v1.
+Differences:
+
+- **No CPU in the data path.** `TxChunkStreamer` writes each chunk from the input FIFO into the socket TX buffer with one VDM burst. The CPU only gives it the TX buffer offset.
+- **Batching:** one SEND per `tx_chunks_per_datagram` chunks. The register work per datagram is amortised over 10 chunks with the `stream` preset.
+- **CPU:** FemtoRV32 **quark_bicycle**, the same RV32I core with overlapped fetch (≈20 % fewer cycles per instruction). It is vendored next to quark.
+- **SCLK = clk / 2:** 25 MHz with the `stream` preset at 50 MHz, using LiteSPI divider 2.
+
+```
+tx stream ─► SyncFIFO (64 × 32 bit, block RAM) ─► TxChunkStreamer ──┐
+                                                                      ├─mux─► LiteSPI SDR PHY ─► W5500 SPI
+FemtoRV32 quark_bicycle ──CSR──► LiteSPIMaster ──────────────────────┘
+        │  └──CSR──► txstream (start = TX buffer offset, busy)
+        └─────CSR──► W5500Ctrl (RSTn, status_ready, status_error)
+```
+
+Hardware details:
+- **`TxChunkStreamer`:**
+  - A write to `txstream_start` (16-bit TX buffer offset) arms it.
+  - It waits until the FIFO holds a whole chunk, so SCLK never stalls inside a burst.
+  - It then owns the PHY for one VDM frame: CS low, the 24-bit header (offset, socket-n TX block, write), and chunk-words 32-bit transfers straight from the FIFO.
+  - CS goes high once the PHY has returned every transfer; the MISO data is dropped.
+  - `txstream_busy` is high from the `start` write until then.
+- **PHY mux:** the PHY's sink and source streams go to the streamer while it is active and to LiteSPIMaster otherwise. CS = master CS | streamer CS.
+  - Contract: the firmware leaves the master idle, with CS low, while `busy`.
+  - The mux is written as one assignment per signal. A combinational block that both reads a `ready` and drives a `valid` shows up as a loop in Verilator (UNOPTFLAT).
+- **Input FIFO:** the next power of two ≥ max(64, 2 chunks) words. 64 words ≈ 145 µs of input at one chunk per 1/44100 s. That covers the per-datagram control phase, during which nothing drains.
+- **No bus stall:** nothing stalls the bus any more, so the default Wishbone timeout is back.
+
+Firmware per datagram (bring-up as in soc_v1; `Sn_TX_WR` is read once after OPEN and then tracked):
+1. Read `Sn_TX_FSR` until two reads agree; it must be ≥ datagram size within `cmd_timeout_us`. This happens once per datagram.
+2. For each chunk:
+   1. `txstream_start = Sn_TX_WR + c × tx_chunk_bytes`.
+   2. Poll `txstream_busy`. This waits for the producer as well as for the burst.
+3. Write `Sn_TX_WR + datagram size`, then SEND, then wait for `Sn_CR` to clear. Then wait for `Sn_IR.SENDOK` or `.TIMEOUT` and clear SENDOK.
+4. 1-byte register accesses (`Sn_CR`, `Sn_IR`, `Sn_SR`) are a single 32-bit transfer (header + data). 2-byte ones are 32 + 8 bits.
+
+Measured and estimated results:
+- **Simulation** (cocotb, W5500 model, 50 MHz):
+
+  | preset | SCLK | chunks / datagram | steady state, back-to-back | per datagram | rate |
+  |---|---|---|---|---|---|
+  | `stream` | 25 MHz | 10 | 18.3 µs / chunk | ≈183 µs (400 B) | ≈2.2 MB/s |
+  | `default32` | 12.5 MHz | 1 | 70 µs / chunk | 70 µs (40 B) | ≈0.57 MB/s |
+  | soc_v1, `default32` | 12.5 MHz | 1 | 148 µs / chunk | 148 µs (40 B) | ≈0.27 MB/s |
+
+  - **44.1 kHz, one 40-byte chunk per tick** (≈1.76 MB/s, `stream`, 10 / 100 chunks): passes. The source is never stalled (min slack 22.5 µs of 22.7 µs), and every datagram is sent. On `default32` it remains an expected failure.
+  - **Streaming one chunk** takes ≈15 µs: CS setup, 24-bit header, then 10 × (64 + ≈4) clk.
+  - **Control phase** per datagram: ≈30 µs (FSR, TX_WR, SEND, Sn_CR, Sn_IR, IR clear).
+- **Firmware size:** ≈1.7 KiB.
+- **Yosys resource estimate** (`make -k -j synth-estimate PRESET=stream IMPL=soc_v2`). It costs ≈250–430 LUT more than soc_v1, for the bicycle core, the streamer and the larger FIFO.
+  - Xilinx 7: ≈1475 LUT, 650 FF, 2 RAMB18, 27 RAM32M + 11 RAM64M.
+  - Lattice XO2: ≈1900 LUT4, 690 FF, 6 DP8KC.
+  - Gowin: ≈2050 LUT, 650 FF.
+  - MAX10: same `synth_intel` ROM-init limitation as soc_v1.
+
+**[verify]** on hardware (the model completes SEND instantly):
+- **SEND → SENDOK time:** with headers, a 400-byte datagram takes ≈38 µs on the wire at 100 Mbit/s. That adds to the ≈183 µs per datagram unless SEND is overlapped (below). At 10 Mbit/s it takes ≈380 µs, longer than the 227 µs datagram period, so the real-time target needs a 100 Mbit link.
+- **25 MHz SCLK** signal integrity and the MISO sample point on the module (w5500-notes item 10).
+- **Overlapping SEND** of datagram k with the chunk writes of k+1, to hide the W5500's send time. Should be safe, since SEND uses the `Sn_TX_RD..Sn_TX_WR` range latched at SEND, but it is not done yet.
+
+Open: a producer that stops in the middle of a datagram leaves the written chunks unsent; there is no flush or `tx_last` yet. See the open questions above.
 - RX path; `tx_last` / variable length.
 
