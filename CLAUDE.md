@@ -27,7 +27,7 @@ make -j synth-estimate IMPL=<impl>  # yosys MAX10/Gowin/Xilinx/Lattice -> build/
                            # (soc_v1: add -k, synth_intel can't map initialized M9K)
 make check                 # ruff
 uv run pytest tests/sim/test_cocotb.py -k "default-stub_rtl"   # single sim
-make hw-build IMPL=soc_v2      # DE10-Lite hardware test -> build/hwtest/<impl>/gateware/*.sof
+make hw-build IMPL=soc_v2      # DE10-Lite hardware test -> dist/hwtest_de10lite_<impl>.sof
                            # (Quartus 21.1 from the host mount; hw-gen = no Quartus run)
 make hw-receive               # host-side UDP receiver/checker (tests/hwtest_e2e/README.md)
 ```

@@ -126,8 +126,11 @@ HW_PRESET := $(if $(filter command line,$(origin PRESET)),--preset $(PRESET))
 hw-gen: ## DE10-Lite test design: core + top Verilog + Quartus project (no Quartus run)
 	$(HW_RUN).de10lite --impl $(IMPL) $(HW_PRESET)
 
-hw-build: ## DE10-Lite test design + Quartus build -> build/hwtest/<impl>/gateware/*.sof
+hw-build: ## DE10-Lite test design + Quartus build -> dist/hwtest_de10lite_<impl>.sof
 	$(HW_RUN).de10lite --impl $(IMPL) $(HW_PRESET) --build
+	@mkdir -p $(DIST_DIR)
+	cp build/hwtest/$(IMPL)/gateware/hwtest_de10lite.sof $(DIST_DIR)/hwtest_de10lite_$(IMPL).sof
+	@echo "[make] $(DIST_DIR)/hwtest_de10lite_$(IMPL).sof"
 
 hw-receive: ## UDP receiver for the hardware test (RECEIVE_ARGS="--expect-rate 44100")
 	$(HW_RUN).receiver $(RECEIVE_ARGS)

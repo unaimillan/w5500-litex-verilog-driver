@@ -64,8 +64,8 @@ The addresses are the `CoreConfig` defaults (`config.py`):
 ## Build (container) and program (host)
 
 ```sh
-make hw-build IMPL=soc_v1       # -> build/hwtest/soc_v1/gateware/hwtest_de10lite.sof (preset de10lite)
-make hw-build IMPL=soc_v2       # -> build/hwtest/soc_v2/gateware/hwtest_de10lite.sof (preset stream)
+make hw-build IMPL=soc_v1       # -> dist/hwtest_de10lite_soc_v1.sof (preset de10lite)
+make hw-build IMPL=soc_v2       # -> dist/hwtest_de10lite_soc_v2.sof (preset stream)
 make hw-gen   IMPL=soc_v2       # same without running Quartus (Verilog + .qsf/.sdc only)
 ```
 
@@ -76,7 +76,7 @@ Program the board on the host, where the USB-Blaster is. The workspace is bind-m
 `.sof` is already there:
 
 ```sh
-quartus_pgm -m jtag -o "p;build/hwtest/soc_v2/gateware/hwtest_de10lite.sof"
+quartus_pgm -m jtag -o "p;dist/hwtest_de10lite_soc_v2.sof"
 ```
 
 ## Board controls
