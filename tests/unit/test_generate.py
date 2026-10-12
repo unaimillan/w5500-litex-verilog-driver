@@ -9,7 +9,7 @@ import pytest
 from w5500_litex_verilog_driver.config import PRESETS
 from w5500_litex_verilog_driver.core import ports
 
-from .conftest import IMPLS, ROOT, TOP, VERILATOR_WAIVERS
+from ..common import IMPLS, ROOT, TOP, VERILATOR_WAIVERS
 
 RTL_SOURCES = sorted([*(ROOT / "rtl").glob("*.v"), *(ROOT / "rtl").glob("*.sv")])
 

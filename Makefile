@@ -33,7 +33,7 @@ GATEWARE := $(OUT_DIR)/$(BUILD_NAME).v
 SOURCES  := $(shell find src -name '*.py') $(wildcard rtl/*.v rtl/*.sv) pyproject.toml uv.lock
 RTL      := $(wildcard rtl/*.v rtl/*.sv)
 
-# Verilator -Wall waivers for the generated file (keep in sync with tests/conftest.py).
+# Verilator -Wall waivers for the generated file (keep in sync with tests/common.py).
 VERI_WAIVE := -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC \
               -Wno-COMBDLY -Wno-PROCASSINIT -Wno-CASEINCOMPLETE
 

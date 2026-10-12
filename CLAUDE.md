@@ -26,7 +26,7 @@ make lint IMPL=<impl>      # Verilator -Wall (+ waivers) on generated file, stri
 make -j synth-estimate IMPL=<impl>  # yosys MAX10/Gowin/Xilinx/Lattice -> build/synth/*.stat
                            # (soc_v1: add -k, synth_intel can't map initialized M9K)
 make check                 # ruff
-uv run pytest tests/test_cocotb.py -k "default-stub_rtl"   # single sim
+uv run pytest tests/sim/test_cocotb.py -k "default-stub_rtl"   # single sim
 ```
 
 ## Architecture
@@ -54,18 +54,21 @@ uv run pytest tests/test_cocotb.py -k "default-stub_rtl"   # single sim
 - `impl/soc_v2.py` + `firmware/soc_v2/` — like soc_v1 (reuses its CPU wrapper, `W5500Ctrl`,
   `build_firmware`) but FemtoRV quark_bicycle, and `TxChunkStreamer` writes chunks FIFO → SPI
   in hardware; the CPU only does the control plane. Target preset `stream` (25 MHz SCLK, 10
-  chunks per datagram); `PACKET_RATE_OK` in `tests/test_cocotb.py` lists (impl, preset) pairs
+  chunks per datagram); `PACKET_RATE_OK` in `tests/sim/test_cocotb.py` lists (impl, preset) pairs
   that must sustain one chunk per 1/44100 s.
 - `tests/models/w5500_model.py` — `W5500Model` (byte-level, pure Python, UDP OPEN/SEND/RECV,
   ring buffers, `inject()`/`sent`) + `W5500SpiSlave` cocotb pin adapter (mode 0).
-- `tests/hdl/cocotb_*.py` — cocotb modules (not collected by pytest directly); run via
-  `tests/test_cocotb.py` over every (preset, impl). New impls are picked up automatically.
+- `tests/` — `unit/` (config, generation + lint, model), `sim/` (cocotb), `models/` (shared),
+  `hwtest_e2e/` (DE10-Lite hardware test harness: only `test_*.py` is collected, build scripts
+  must not run on import); `common.py` = shared constants, `conftest.py` = `generated` fixture.
+- `tests/sim/cocotb_*.py` — cocotb modules (not collected by pytest directly); run via
+  `tests/sim/test_cocotb.py` over every (preset, impl). New impls are picked up automatically.
 
 ## Conventions / gotchas
 
 - `rtl/` sources must pass `verilator --lint-only -Wall` with no waivers (except documented
   stub-only ones). Generated file uses `VERI_WAIVE` (Makefile) = `VERILATOR_WAIVERS`
-  (tests/conftest.py) — keep both in sync.
+  (tests/common.py) — keep both in sync.
 - `rtl/` may be SystemVerilog; the output stays `.v`, so tools must read it in SV mode
   (`read_verilog -sv`, Verilator default).
 - Instance parameters: pass sized `Constant`s (Migen otherwise emits minimum widths).

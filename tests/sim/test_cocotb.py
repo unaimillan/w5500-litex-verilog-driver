@@ -1,4 +1,4 @@
-"""pytest entry point for the cocotb (Verilator) testbenches in tests/hdl/."""
+"""pytest entry point for the cocotb (Verilator) testbenches (cocotb_*.py here)."""
 
 import shutil
 
@@ -6,7 +6,7 @@ import pytest
 
 from w5500_litex_verilog_driver.impl import IMPLEMENTATIONS
 
-from .conftest import BUILD_DIR, IMPLS, ROOT, TOP
+from ..common import BUILD_DIR, IMPLS, ROOT, TOP
 
 pytestmark = pytest.mark.skipif(shutil.which("verilator") is None,
                                 reason="verilator not installed")
@@ -46,7 +46,7 @@ def run_cocotb(verilog, test_module, build_dir, preset, waves=False, extra_env=N
 @pytest.mark.parametrize("impl", IMPLS)
 @pytest.mark.parametrize("preset", ["default", "default32"])
 def test_smoke(generated, preset, impl):
-    run_cocotb(generated(preset, impl), "tests.hdl.cocotb_smoke",
+    run_cocotb(generated(preset, impl), "tests.sim.cocotb_smoke",
                BUILD_DIR / f"{preset}-{impl}" / "sim", preset)
 
 
@@ -54,6 +54,6 @@ def test_smoke(generated, preset, impl):
 @pytest.mark.parametrize("preset", ["default32", "stream"])
 def test_tx(generated, preset, impl):
     ok = (impl, preset) in PACKET_RATE_OK
-    run_cocotb(generated(preset, impl), "tests.hdl.cocotb_tx",
+    run_cocotb(generated(preset, impl), "tests.sim.cocotb_tx",
                BUILD_DIR / f"{preset}-{impl}" / "sim", preset,
                extra_env={"W5500_PACKET_RATE_OK": "1" if ok else ""})

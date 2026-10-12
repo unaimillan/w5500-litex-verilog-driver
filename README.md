@@ -81,6 +81,7 @@ src/w5500_litex_verilog_driver/
   firmware/      C firmware for SoC-based impls (compiled at generation time)
 rtl/             hand-written (System)Verilog used by impl/ (embedded into the output)
 vendor/          third-party Verilog, pinned and unmodified (FemtoRV32)
-tests/           pytest + cocotb; models/w5500_model.py = behavioral W5500 (SPI slave + UDP)
+tests/           pytest: unit/, sim/ (cocotb), models/w5500_model.py = behavioral W5500
+                 (SPI slave + UDP), hwtest_e2e/ (DE10-Lite hardware test)
 docs/            architecture, W5500 notes, prior-art survey
 ```

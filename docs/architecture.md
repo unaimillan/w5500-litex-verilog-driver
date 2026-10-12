@@ -37,7 +37,7 @@ CoreConfig (config.py preset) ──► W5500UdpCore (core.py: ports + clock dom
 ## Port contract (*draft*)
 
 Declared in `core.py: PORT_GROUPS`; verified for every implementation by
-`tests/test_generate.py`. `DW` = `CoreConfig.data_width` (8 or 32).
+`tests/unit/test_generate.py`. `DW` = `CoreConfig.data_width` (8 or 32).
 
 | port | dir | width | notes |
 |------|-----|-------|-------|

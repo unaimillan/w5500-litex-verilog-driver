@@ -2,7 +2,7 @@
 
 from w5500_litex_verilog_driver import w5500 as W
 
-from .models.w5500_model import W5500Model
+from ..models.w5500_model import W5500Model
 
 
 def wr(m, bsb, addr, data):

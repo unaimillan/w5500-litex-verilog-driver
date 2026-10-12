@@ -1,4 +1,4 @@
-"""cocotb smoke tests run against every implementation (see tests/test_cocotb.py).
+"""cocotb smoke tests run against every implementation (see tests/sim/test_cocotb.py).
 
 Only checks invariants that hold for the stubs as well as for real implementations; behaviour
 tests (init sequence, TX/RX datagrams) come with the first real implementation.

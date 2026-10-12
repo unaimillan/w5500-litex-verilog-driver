@@ -1,4 +1,4 @@
-"""cocotb behaviour tests for implementations with a TX path (see tests/test_cocotb.py).
+"""cocotb behaviour tests for implementations with a TX path (see tests/sim/test_cocotb.py).
 
 The W5500 is the behavioural model from tests/models; the preset comes from ``W5500_PRESET``.
 Implementations under test send one datagram per ``tx_chunks_per_datagram`` chunks of
@@ -12,8 +12,8 @@ import cocotb
 from cocotb.triggers import ClockCycles, RisingEdge, Timer
 from cocotb.utils import get_sim_time
 
-from tests.hdl.cocotb_smoke import CLK_PERIOD_NS, reset
 from tests.models.w5500_model import W5500Model, W5500SpiSlave
+from tests.sim.cocotb_smoke import CLK_PERIOD_NS, reset
 from w5500_litex_verilog_driver import w5500 as W
 from w5500_litex_verilog_driver.config import PRESETS
 
@@ -28,7 +28,7 @@ INIT_CYCLES = CFG.cycles(CFG.reset_hold_us + CFG.init_wait_us + 2000)
 DRAIN_CYCLES = CFG.cycles(2000)
 
 SAMPLE_RATE = 44_100  # Hz, real-time source tests.
-# The (impl, preset) under test sustains one chunk per 1/SAMPLE_RATE (see tests/test_cocotb.py).
+# The (impl, preset) under test sustains one chunk per 1/SAMPLE_RATE (see tests/sim/test_cocotb.py).
 PACKET_RATE_OK = os.environ.get("W5500_PACKET_RATE_OK") == "1"
 
 
